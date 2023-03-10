@@ -1,0 +1,9 @@
+#!/usr/bin/env rc
+# requires unionfs-fuse
+
+fn runjob {
+	<{n=`{read} && ! ~ $#n 0 && read -c $n} >[2=1]
+}
+
+# Drop in our initial files
+listen1 -v tcp!192.168.101.141!17019 ./tlssrv -A /bin/rc -c runjob 
