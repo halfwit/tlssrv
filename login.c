@@ -41,6 +41,7 @@
 #include <unistd.h>
 
 #include <u.h>
+#include <args.h>
 #include <libc.h>
 #include <auth.h>
 #include <authsrv.h>
@@ -48,58 +49,77 @@
 
 #include "fncs.h"
 
+// Needed for p9any
 char *authserver;
+char *argv0;
+
+void
+usage(void)
+{
+	fprint(2, "usage: get9pkey [-f keyfile]\n");
+	exits("usage");
+}
 
 int
 main(int argc, char *argv[])
 {
-	char *pass = "";
-	char pbuf[1024], abuf[1024], tbuf[2*PAKYLEN+2*MAXTICKETLEN];
-	uchar ys[PAKYLEN];
-	Authkey key;
-	Ticketreq tr;
-	Ticket t;
-	PAKpriv ps, p;
-	int fd, ret;
+	char *pass, *user, *keyfile = nil;
+	char abuf[1024], ubuf[1024];
 	AuthInfo *ai;
+	Authkey key;
+	int afd, fd, found = 0;
 
-	authserver = readpassphrase("authserver: ", abuf, sizeof(abuf), RPP_ECHO_ON);
-	pass = readpassphrase("pass: ", pbuf, sizeof(pbuf), RPP_ECHO_OFF);
-		    
-	if (authserver == NULL || pass == NULL)
+	ARGBEGIN{
+	case 'f': keyfile = EARGF(usage()); break;
+	} ARGEND
+
+	if(*argv != nil)
+		usage();
+
+	if(keyfile == nil)
+		keyfile = "/tmp/.p9key";
+
+	/* Lazy use of readpassphrase for a prompt */
+	authserver = readpassphrase("auth[auth]: ", abuf, sizeof(abuf), RPP_ECHO_ON);
+	if(!strlen(authserver))
+		authserver = "auth";
+
+	user = readpassphrase("user[unix]: ", ubuf, sizeof(ubuf), RPP_ECHO_ON);
+	if(!strlen(user))
+		user = "unix";
+
+	pass = getpass("password: ");
+	if (pass == nil)
 		sysfatal("unable to read input");
 
-	fd = unix_dial(authserver, "17019");
-	if(fd < 0)
+	afd = unix_dial(authserver, "17019");
+	if(afd < 0)
 		sysfatal("unable to dial authserver");
 
-	// TODO: Use flag to set this
-	ai = p9any("unix", pass, fd);
+	ai = p9any(user, pass, afd);
 	if(ai == nil)
-		sysfatal("unable to authenticate");
+		sysfatal("unable to verify user");
+	close(afd);
 
-	tr.type = AuthPAK;
-	authpak_hash(&key, "unix");
-	authpak_new(&ps, &key, ys, 1);
-	ret = gettickets(&key, &tr, ys, tbuf, sizeof(tbuf));
-	
-	if(ret > 0 && authpak_finish(&ps, &key, ys))
-		sysfatal("unable to create AES key");
+	passtokey(&key, pass);
+	memset(&pass, 0, sizeof(pass));
 
-	m = convM2T(tbuf, ret, &t, &key);
-	if(m <= 0 || t.form == 0)
-		sysfatal("incorrect keytype returned");
-
-	// TODO: Track through p9skinit some more in factotum, see what it's getting and setting for the PSK.
-	close(fd);
-
-	fd = open("/tmp/.p9key", O_CREAT|O_WRONLY);
+	fd = open(keyfile, O_CREAT|O_WRONLY);
 	if(fd < 0)
 		sysfatal("unable to write to tmp");
-
-	fprint(fd, "%s:aes:%s\n", authserver, key.aes); 
-	fprint(fd, "%s:des:%s\n", authserver, key.des);
-	memset(pass, 0, strlen(pass));
+	if(sizeof(key.aes)){
+		fprint(fd, "%s:aes:%s\n", authserver, key.aes);
+		print("aes key written successfully\n");
+		found++;
+	}
+	if(sizeof(key.des)){
+		fprint(fd, "%s:des:%s\n", authserver, key.des);
+		print("des key written successfully\n");
+		found++;
+	}
+	memset(&key, 0, sizeof(key));
 	close(fd);
-	exit(0);
+	if(found)
+		exit(0);
+	sysfatal("unexpected error writing keys");
 }

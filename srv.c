@@ -79,7 +79,7 @@ static int
 srv9pauth(Authkey key)
 {
 	char b[1024];
-	int n, m;
+	int n;
 	fprint(2, "%s\n", key.aes);
 	ai = unix_auth(authdom, key);
 	if(ai == nil)
@@ -125,7 +125,6 @@ int
 main(int argc, char **argv)
 {
 	int io, uid;
-	char ks[MAXTICKETLEN*2];
 	Authkey key;
 
 	ARGBEGIN {
