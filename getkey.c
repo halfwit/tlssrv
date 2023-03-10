@@ -56,7 +56,7 @@ char *argv0;
 void
 usage(void)
 {
-	fprint(2, "usage: get9pkey [-f keyfile]\n");
+	fprint(2, "usage: get9pkey [-a authserver ] [-f keyfile]\n");
 	exits("usage");
 }
 
@@ -64,13 +64,17 @@ int
 main(int argc, char *argv[])
 {
 	char *pass, *user, *keyfile = nil;
-	char abuf[1024], ubuf[1024];
+	char ubuf[1024];
 	AuthInfo *ai;
 	Authkey key;
 	int afd, fd, found = 0;
 
+	/* User can set AUTH if they do not want to pollute /etc/hosts or flag it in */
+	authserver = getenv("AUTH");
+
 	ARGBEGIN{
 	case 'f': keyfile = EARGF(usage()); break;
+	case 'a': authserver = EARGF(usage()); break;
 	} ARGEND
 
 	if(*argv != nil)
@@ -79,11 +83,11 @@ main(int argc, char *argv[])
 	if(keyfile == nil)
 		keyfile = "/tmp/.p9key";
 
-	/* Lazy use of readpassphrase for a prompt */
-	authserver = readpassphrase("auth[auth]: ", abuf, sizeof(abuf), RPP_ECHO_ON);
-	if(!strlen(authserver))
+	/* Read from /etc/hosts */
+	if(authserver == nil)
 		authserver = "auth";
 
+	/* Lazy use of readpassphrase for a prompt */
 	user = readpassphrase("user[unix]: ", ubuf, sizeof(ubuf), RPP_ECHO_ON);
 	if(!strlen(user))
 		user = "unix";
@@ -92,6 +96,7 @@ main(int argc, char *argv[])
 	if (pass == nil)
 		sysfatal("unable to read input");
 
+	// TODO: 17019 --> "rcpu" attempt getservbyname first
 	afd = unix_dial(authserver, "17019");
 	if(afd < 0)
 		sysfatal("unable to dial authserver");

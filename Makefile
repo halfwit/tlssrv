@@ -16,8 +16,8 @@ tlsclient: cpu.$O $(LIBS)
 tlssrv: srv.$O $(LIBS)
 	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ srv.$O $(LIBS)
 
-get9pkey: login.$O $(LIBS)
-	$(CC) -o $@ login.$O $(LIBS)
+get9pkey: getkey.$O $(LIBS)
+	$(CC) -o $@ getkey.$O $(LIBS)
 
 cpu.$O: cpu.c
 	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
