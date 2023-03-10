@@ -1,9 +1,35 @@
 #!/usr/bin/env rc
 # requires unionfs-fuse
 
-fn runjob {
-	<{n=`{read} && ! ~ $#n 0 && read -c $n} >[2=1]
+chroot=()
+
+fn server {
+	echo hereeeeee
+	# WIP!
+	tmp=`{mktemp -d}
+	unionfs $chroot'='RO $tmp
+
+	# This proto file doesn't exist, it'll have to be provided
+	# plan9port's mkfs creates a kfs normally, which we don't need for this
+	# this will make sure we have all the necessary files and directories to run our listener
+	$PLAN9/bin/disk/mkfs -a cpuproto | $PLAN9/bin/disk/mkext -d $tmp
+
+	# Try to chroot and read commands from the remote connection
+	/usr/sbin/chroot $tmp /bin/rc <{n=`{read} && ! ~ $#n 0 && read -c $n} >[2=1]
+
+	# Clean up
+	fusermount $tmp
 }
 
+chroot=`{mktemp -d}
+
+# Create our key cache
+get9pkey
+
 # Drop in our initial files
-listen1 -v tcp!192.168.101.141!17019 ./tlssrv -A /bin/rc -c runjob 
+mkdir $chroot/bin
+cp -r $PLAN9/bin $chroot/bin 
+cp -r /usr/local/x9srv/bin/* $chroot/bin/
+
+# Listen with the user we start with
+listen1 -v -t tcp!*!17019 tlssrv -A /bin/rc -c server
