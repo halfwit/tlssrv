@@ -378,7 +378,7 @@ AuthInfo*
 unix_auth(char *authdom, Authkey authkey)
 {
 	char resp[1024], hello[1024], *proto, *dom;
-	uchar srand[2*NONCELEN], schal[CHALLEN], cchal[CHALLEN], y[PAKYLEN];
+	uchar srand[2*NONCELEN], schal[CHALLEN], cchal[CHALLEN], yb[PAKYLEN];
 	char trbuf[TICKREQLEN+PAKYLEN], abuf[MAXTICKETLEN+MAXAUTHENTLEN];
 	AuthInfo *ai;
 	PAKpriv p;
@@ -413,9 +413,6 @@ unix_auth(char *authdom, Authkey authkey)
 		sysfatal("short write on proto challenge OK");
 #endif
 
-	/**
-         * Initialize our data; we want a tr, challenge, etc
-	 */
 	memset(&tr, 0, sizeof(tr));
 	tr.type = AuthTreq;
 	strcpy(tr.authid, "unix");
@@ -430,34 +427,40 @@ unix_auth(char *authdom, Authkey authkey)
 		m += PAKYLEN;
 		tr.type = AuthPAK;
 		authpak_hash(&authkey, tr.authid);
-		authpak_new(&p, &authkey, y, 1);
 	}
 
 	n = convTR2M(&tr, trbuf, TICKREQLEN);
 	if(dp9ik){
-		memcpy(trbuf+n, y, PAKYLEN);
+		n += PAKYLEN;
+		authpak_new(&p, &authkey, (uchar*)trbuf + n, 1);
 	}
+
 	if(write(1, trbuf, m) < n)
 		sysfatal("short read sending ticket request");
 
 	if(dp9ik){
-		if((n = read(0, y, PAKYLEN+1)) < 0)
+		if((n = read(0, yb, PAKYLEN)) < 0)
 			sysfatal("short read receiving client data");
-		authpak_finish(&p, &authkey, y);
+		if(authpak_finish(&p, &authkey, yb))
+			sysfatal("unable to decrypt message");
 	}
+
 	if((n = read(0, abuf, sizeof(abuf))) < 0)
 		sysfatal("short read receiving ticket");
-fprint(2, "%d read in\n", n);
-	if((m = convM2T(abuf, n, &t, &authkey)) <= 0)
-		sysfatal("unable to parse server ticket");
-fprint(2, "t.num: %s t.suid: %s\n", t.num, t.suid);
-	if(convM2A(abuf+m, n-m, &auth, &t) <= 0)
+
+	m = convM2T(abuf, n, &t, &authkey);
+	fprint(2, "Parsed out %d bytes for ticket %d left\n", m, n-m);
+fprint(2, "key: %s\n", t.key);
+	if(m <= 0 || convM2A(abuf+m, n-m, &auth, &t) <= 0)
 		sysfatal("unable to parse authenticator");
-fprint(2, "auth.num: %s\n", auth.num);
+fprint(2, "%d %d %s\n", t.form, t.num, t.cuid);
+
 	if(dp9ik && t.form == 0)
 		sysfatal("auth protocol botch");
+
 	if(t.num != AuthTs || tsmemcmp(t.chal, tr.chal, CHALLEN) != 0)
 		sysfatal("schallenge does not match!");
+
 	if(auth.num != AuthAc || tsmemcmp(auth.chal, tr.chal, CHALLEN) != 0)
 		sysfatal("cchallenge does not match!");
 

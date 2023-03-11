@@ -80,7 +80,6 @@ srv9pauth(Authkey key)
 {
 	char b[1024];
 	int n;
-	fprint(2, "%s\n", key.aes);
 	ai = unix_auth(authdom, key);
 	if(ai == nil)
 		sysfatal("can't authenticate");

@@ -53,6 +53,24 @@
 char *authserver;
 char *argv0;
 
+int
+getpakkey(Authkey *a, char *user, char *authdom)
+{
+	Ticketreq tr;
+	int afd;
+	afd = unix_dial(authserver, "567");
+
+	memset(&tr, 0, sizeof(tr));
+	tr.type = AuthPAK;
+	strcpy(tr.authid, user);
+	strcpy(tr.authdom, authdom);
+	genrandom((uchar*)tr.chal, CHALLEN);
+
+	if(afd < 0)
+		sysfatal("unable to dial authserver");
+	return _asgetpakkey(afd, &tr, a);
+}
+
 void
 usage(void)
 {
@@ -63,7 +81,7 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	char *pass, *user, *keyfile = nil;
+	char *pass, *user, *authdom = nil, *keyfile = nil;
 	char ubuf[1024];
 	AuthInfo *ai;
 	Authkey key;
@@ -74,6 +92,7 @@ main(int argc, char *argv[])
 
 	ARGBEGIN{
 	case 'f': keyfile = EARGF(usage()); break;
+	case 'd': authdom = EARGF(usage()); break;
 	case 'a': authserver = EARGF(usage()); break;
 	} ARGEND
 
@@ -82,6 +101,9 @@ main(int argc, char *argv[])
 
 	if(keyfile == nil)
 		keyfile = "/tmp/.p9key";
+
+	if(authdom == nil)
+		authdom = "9front";
 
 	/* Read from /etc/hosts */
 	if(authserver == nil)
@@ -112,8 +134,8 @@ main(int argc, char *argv[])
 	fd = open(keyfile, O_CREAT|O_WRONLY);
 	if(fd < 0)
 		sysfatal("unable to write to tmp");
-	if(sizeof(key.aes)){
-		fprint(fd, "%s:aes:%s\n", authserver, key.aes);
+	if(sizeof(key.aes) && getpakkey(&key, user, authdom)){
+		fprint(fd, "%s:aes:%s\n", authserver, key.pakhash);
 		print("aes key written successfully\n");
 		found++;
 	}
