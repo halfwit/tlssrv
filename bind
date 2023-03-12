@@ -1,0 +1,31 @@
+#!/bin/rc
+
+# This may break outside of the chroot, as /bin/rc may not be present
+# Requires unionfs-fuse to be present in your chroot as /bin/unionfs
+# Use -o flag to hide .unionfs files
+
+# bind [ option ... ] new old
+new=()
+old=()
+ro="RO"
+
+fn usage {
+	echo 'usage: bind [-b|-a|-c|-bc|-ac] new old' >[1=2]
+	exit usage
+}
+
+while(~ $1 -*){
+	switch($1){
+	case -a;	new=$1; old=$2
+	case -b;	new=$2; old=$1
+	case -c;	ro="RW"
+	case -q;	quiet=1
+	case *;		usage
+	}
+	shift
+}
+if(~ $quiet 1)
+	`{/bin/unionfs -o allow_other,suid,dev 'new=$ro' $old}
+if not
+	/bin/unionfs -o allow_other,suid,dev 'new=$ro' $old
+ 

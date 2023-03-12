@@ -16,8 +16,8 @@ tlsclient: cpu.$O $(LIBS)
 tlssrv: srv.$O $(LIBS)
 	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ srv.$O $(LIBS)
 
-get9pkey: getkey.$O $(LIBS)
-	$(CC) -o $@ getkey.$O $(LIBS)
+get9pkey: login.$O $(LIBS)
+	$(CC) -o $@ login.$O $(LIBS)
 
 cpu.$O: cpu.c
 	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
@@ -42,10 +42,6 @@ all: tlsclient tlssrv get9pkey
 .PHONY: clean
 clean:
 	rm -f *.o lib*/*.o lib*/*.a tlsclient tlssrv get9pkey
-
-tlsclient.obsd:
-	OPENSSL=eopenssl11 LDFLAGS="$(LDFLAGS) -Xlinker --rpath=/usr/local/lib/eopenssl11/" $(MAKE) tlsclient
-	mv tlsclient tlsclient.obsd
 
 .PHONY: tlsclient.install
 tlsclient.install: tlsclient tlsclient.1
