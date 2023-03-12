@@ -29,7 +29,7 @@ char *argv0;
 char *user;
 
 int
-read_keys(Authkey *ak)
+readpk(Authkey *ak)
 {
 	char buf[1024], *bbuf, *p, *type, *key;
 	int fd, n;
@@ -136,6 +136,10 @@ main(int argc, char **argv)
 
 	if(authdom == nil)
 		authdom = "9front";
+
+	if(readpk(&key) < 0)
+		sysfatal("unable to parse authentication keys");
+
 	SSL_library_init();
 	OpenSSL_add_all_algorithms();
 	SSL_load_error_strings();
@@ -151,9 +155,6 @@ main(int argc, char **argv)
 	ssl_conn = SSL_new(ssl_ctx);
 	if(ssl_conn == nil)
 		sysfatal("could not init openssl");
-
-	if(read_keys(&key) < 0)
-		sysfatal("unable to parse authentication keys");
 
 	SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, 0);
 	SSL_CTX_set_psk_server_callback(ssl_ctx, psk_server_cb);

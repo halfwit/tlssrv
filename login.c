@@ -53,24 +53,6 @@
 char *authserver;
 char *argv0;
 
-int
-getpakkey(Authkey *a, char *user, char *authdom)
-{
-	Ticketreq tr;
-	int afd;
-	afd = unix_dial(authserver, "567");
-
-	memset(&tr, 0, sizeof(tr));
-	tr.type = AuthPAK;
-	strcpy(tr.authid, user);
-	strcpy(tr.authdom, authdom);
-	genrandom((uchar*)tr.chal, CHALLEN);
-
-	if(afd < 0)
-		sysfatal("unable to dial authserver");
-	return _asgetpakkey(afd, &tr, a);
-}
-
 void
 usage(void)
 {
@@ -134,8 +116,8 @@ main(int argc, char *argv[])
 	fd = open(keyfile, O_CREAT|O_WRONLY);
 	if(fd < 0)
 		sysfatal("unable to write to tmp");
-	if(sizeof(key.aes) && getpakkey(&key, user, authdom)){
-		fprint(fd, "%s:aes:%s\n", authserver, key.pakhash);
+	if(sizeof(key.aes)){
+		fprint(fd, "%s:aes:%s\n", authserver, key.aes);
 		print("aes key written successfully\n");
 		found++;
 	}
