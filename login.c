@@ -67,7 +67,7 @@ main(int argc, char *argv[])
 	char ubuf[1024];
 	AuthInfo *ai;
 	Authkey key;
-	int afd, fd, found = 0;
+	int afd, fd;
 
 	/* User can set AUTH if they do not want to pollute /etc/hosts or flag it in */
 	authserver = getenv("AUTH");
@@ -113,22 +113,17 @@ main(int argc, char *argv[])
 	passtokey(&key, pass);
 	memset(&pass, 0, sizeof(pass));
 
+	if(!sizeof(key.aes))
+		sysfatal("no aes key found for user");
+
 	fd = open(keyfile, O_CREAT|O_WRONLY);
 	if(fd < 0)
 		sysfatal("unable to write to tmp");
-	if(sizeof(key.aes)){
-		fprint(fd, "%s:aes:%s\n", authserver, key.aes);
-		print("aes key written successfully\n");
-		found++;
-	}
-	if(sizeof(key.des)){
-		fprint(fd, "%s:des:%s\n", authserver, key.des);
-		print("des key written successfully\n");
-		found++;
-	}
+
+	fprint(fd, "%s:aes:%s:%s\n", authserver, user, key.aes);
+	print("aes key written successfully\n");
+
 	memset(&key, 0, sizeof(key));
 	close(fd);
-	if(found)
-		exit(0);
-	sysfatal("unexpected error writing keys");
+	exit(0);
 }

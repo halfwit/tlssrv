@@ -20,18 +20,19 @@ extern int errno;
 
 char *authserver;
 char *authdom;
+char *user;
+
 static AuthInfo *ai;
 
 SSL_CTX *ssl_ctx;
 SSL *ssl_conn;
 
 char *argv0;
-char *user;
 
 int
 readpk(Authkey *ak)
 {
-	char buf[1024], *bbuf, *p, *type, *key;
+	char buf[1024], *bbuf, *p, *type, *key, *host;
 	int fd, n;
 
 	fd = open("/tmp/.p9key", O_RDONLY);
@@ -39,26 +40,31 @@ readpk(Authkey *ak)
 		return -1;
 
 	if((n = read(fd, buf, sizeof buf)) < 0)
-		sysfatal("unable to read keyfile");
+		return -1;
 	bbuf = buf;
 
-	while(bbuf != nil){
-		if((p = strchr(bbuf, '\n')))
-			*p++ = 0;
-		if((type = strchr(bbuf, ':')) == nil)
-			return 0;
-		*type++ = 0;
-		if((key = strchr(type, ':')) == nil)
-			return -1;
-		*key++ = 0;
-		if(strcmp(type, "aes") == 0)
-			memcpy(ak->aes, key, AESKEYLEN);
-		if(strcmp(type, "des") == 0)
-			memcpy(ak->aes, key, DESKEYLEN);
-		authserver = strdup(bbuf);
-		bbuf = p;
-	}
-	
+	if((p = strchr(bbuf, '\0')))
+		*p++ = 0;
+	if((type = strchr(bbuf, ':')) == nil)
+		return -1;
+	*type++ = 0;
+	if((host = strchr(type, ':')) == nil)
+		return -1;
+	*host++ = 0;
+	if((key = strchr(host, ':')) == nil)
+		return -1;
+	*key++ = 0;
+	if(strcmp(type, "aes") == 0)
+		memcpy(ak->aes, key, AESKEYLEN);
+	if(strcmp(type, "des") == 0)
+		memcpy(ak->aes, key, DESKEYLEN);
+	authserver = strdup(bbuf);
+
+	if(!host)
+		return -1;
+
+	authpak_hash(ak, host);
+	user = strdup(host);
 	return n;
 }
 
@@ -66,7 +72,6 @@ unsigned int
 psk_server_cb(SSL *ssl, const char *identity, unsigned char *psk, unsigned int max_psk_len)
 {
 	uint nsecret = ai->nsecret;
-	estrdup(user, ai->cuid);
 fprint(2, "In psk_server_cb with %s\n", identity);
 	if(max_psk_len < ai->nsecret)
 		sysfatal("psk buffers are too small");
@@ -80,7 +85,7 @@ srv9pauth(Authkey key)
 {
 	char b[1024];
 	int n;
-	ai = unix_auth(authdom, key);
+	ai = auth_unix(user, authdom, key);
 	if(ai == nil)
 		sysfatal("can't authenticate");
 
@@ -137,9 +142,9 @@ main(int argc, char **argv)
 	if(authdom == nil)
 		authdom = "9front";
 
-	if(readpk(&key) < 0)
+	if(readpk(&key) <= 0)
 		sysfatal("unable to parse authentication keys");
-
+	
 	SSL_library_init();
 	OpenSSL_add_all_algorithms();
 	SSL_load_error_strings();
@@ -171,8 +176,8 @@ main(int argc, char **argv)
 	if(io > 2)
 		close(io);
 
-
-	if(uid_from_user(user, &uid) < 0)
+	/* Possibly cap, used with -A sorta in tlssrv proper */
+	if(uid_from_user(ai->cuid, &uid) < 0)
 		sysfatal("unable to switch to authenticated user");
 
 	if(setuid(uid) != 0)

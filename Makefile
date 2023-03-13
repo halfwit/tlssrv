@@ -3,6 +3,8 @@ include ./Make.config
 
 LIBS=\
 	p9any.$O\
+	auth_unix.$O\
+	util.$O\
 	libauthsrv/libauthsrv.a\
 	libmp/libmp.a\
 	libc/libc.a\

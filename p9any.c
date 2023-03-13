@@ -1,19 +1,13 @@
-#include <sys/socket.h>
 #include <sys/types.h>
-#include <arpa/inet.h>
-#include <netdb.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <netinet/in.h>
 
 #include <u.h>
 #include <args.h>
 #include <libc.h>
 #include <auth.h>
 #include <authsrv.h>
-#include <libsec.h>
 
 #include "fncs.h"
 
@@ -25,48 +19,6 @@ estrdup(char *s)
 	s = strdup(s);
 	if(s == nil)
 		sysfatal("out of memory");
-	return s;
-}
-
-int
-unix_dial(char *host, char *port)
-{
-	struct addrinfo hints, *res, *res0;
-	int error;
-	int save_errno;
-	int s;
-	const char *cause = NULL;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-
-	error = getaddrinfo(host, port, &hints, &res0);
-	if(error){
-		printf("could not resolve %s", host);
-		return -1;
-	}
-	s = -1;
-	for (res = res0; res; res = res->ai_next) {
-		s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-		if (s == -1) {
-			cause = "socket";
-			continue;
-		}
-		if (connect(s, res->ai_addr, res->ai_addrlen) == -1) {
-			cause = "connect";
-			save_errno = errno;
-			close(s);
-			errno = save_errno;
-			s = -1;
-			continue;
-		}
-
-		break;  /* okay we got one */
-	}
-	if (s == -1) {
-		err(1, "%s", cause);
-	}
-	freeaddrinfo(res0);
 	return s;
 }
 
@@ -88,12 +40,6 @@ getkey(Authkey *key, char *user, char *dom, char *proto, char *pass)
 		return 1;
 	}
 	return 0;
-}
-
-int
-authdial(char *net, char *dom)
-{
-	return unix_dial(authserver, "567");
 }
 
 static int
@@ -172,6 +118,7 @@ gettickets(Authkey *key, Ticketreq *tr, uchar *y, char *tbuf, int tbuflen)
 		return ret;
 	return mkservertickets(key, tr, y, tbuf, tbuflen);
 }
+
 
 int
 readstr(int fd, char *str, int len)
@@ -344,165 +291,12 @@ again:
 	memmove(crand+NONCELEN, auth.rand, NONCELEN);
 
 	// print("i am %s there.\n", t.suid);
+	ai = establish(&t, crand, dp9ik);
 
-	ai = mallocz(sizeof(AuthInfo), 1);
-	ai->suid = estrdup(t.suid);
-	ai->cuid = estrdup(t.cuid);
-	if(dp9ik){
-		static char info[] = "Plan 9 session secret";
-		ai->nsecret = 256;
-		ai->secret = mallocz(ai->nsecret, 1);
-		hkdf_x(	crand, 2*NONCELEN,
-			(uchar*)info, sizeof(info)-1,
-			(uchar*)t.key, NONCELEN,
-			ai->secret, ai->nsecret,
-			hmac_sha2_256, SHA2_256dlen);
-	} else {
-		ai->nsecret = 8;
-		ai->secret = mallocz(ai->nsecret, 1);
-		des56to64((uchar*)t.key, ai->secret);
-	}
-
-	memset(&t, 0, sizeof(t));
-	memset(&auth, 0, sizeof(auth));
 	memset(&authkey, 0, sizeof(authkey));
 	memset(cchal, 0, sizeof(cchal));
 	memset(crand, 0, sizeof(crand));
 	free(proto);
-
-	return ai;
-}
-
-
-AuthInfo*
-unix_auth(char *authdom, Authkey authkey)
-{
-	char resp[1024], hello[1024], *proto, *dom;
-	uchar srand[2*NONCELEN], schal[CHALLEN], cchal[CHALLEN], yb[PAKYLEN];
-	char trbuf[TICKREQLEN+PAKYLEN], abuf[MAXTICKETLEN+MAXAUTHENTLEN];
-	AuthInfo *ai;
-	PAKpriv p;
-	Authenticator auth;
-	Ticketreq tr;
-	Ticket t;
-	int n, m, dp9ik = 0;
-
-	/**
-         * Start p9any, we fall back to p9sk1
-	 */
-#if P9ANY_VERSION==2
-	sprintf(hello, "v.2 p9sk1@%s dp9ik@%s ", authdom, authdom);
-#else
-	sprintf(hello, "p9sk1@%s dp9ik@%s ", authdom, authdom);
-#endif
-	if(write(1, hello, strlen(hello)+1) != strlen(hello)+1)
-		sysfatal("short write on p9any");
-	if(readstr(0, resp, sizeof resp) < 0)
-		sysfatal("unable to read resp");
-
-	proto = strtok(resp, " ");
-	dom = strtok(NULL, " ");
-	if(proto == NULL || dom == NULL)
-		sysfatal("unable to read requested proto and dom pair");
-
-	if(strcmp(proto, "dp9ik") == 0)
-		dp9ik = 1;
-
-#if P9ANY_VERSION==2
-	if(write(1, "OK\0", 3) != 3)
-		sysfatal("short write on proto challenge OK");
-#endif
-
-	memset(&tr, 0, sizeof(tr));
-	tr.type = AuthTreq;
-	strcpy(tr.authid, "unix");
-	strcpy(tr.authdom, authdom);
-	genrandom((uchar*)tr.chal, CHALLEN);
-
-	if((n = read(0, cchal, CHALLEN)) != CHALLEN)
-		sysfatal("short read on p9sk1 challenge");
-
-	m = TICKREQLEN;
-	if(dp9ik){
-		m += PAKYLEN;
-		tr.type = AuthPAK;
-		authpak_hash(&authkey, tr.authid);
-	}
-
-	n = convTR2M(&tr, trbuf, TICKREQLEN);
-	if(dp9ik){
-		n += PAKYLEN;
-		authpak_new(&p, &authkey, (uchar*)trbuf + n, 1);
-	}
-
-	if(write(1, trbuf, m) < n)
-		sysfatal("short read sending ticket request");
-
-	if(dp9ik){
-		if((n = read(0, yb, PAKYLEN)) < 0)
-			sysfatal("short read receiving client data");
-		if(authpak_finish(&p, &authkey, yb))
-			sysfatal("unable to decrypt message");
-	}
-
-	if((n = read(0, abuf, sizeof(abuf))) < 0)
-		sysfatal("short read receiving ticket");
-
-	m = convM2T(abuf, n, &t, &authkey);
-	fprint(2, "Parsed out %d bytes for ticket %d left\n", m, n-m);
-fprint(2, "key: %s\n", t.key);
-	if(m <= 0 || convM2A(abuf+m, n-m, &auth, &t) <= 0)
-		sysfatal("unable to parse authenticator");
-fprint(2, "%d %d %s\n", t.form, t.num, t.cuid);
-
-	if(dp9ik && t.form == 0)
-		sysfatal("auth protocol botch");
-
-	if(t.num != AuthTs || tsmemcmp(t.chal, tr.chal, CHALLEN) != 0)
-		sysfatal("schallenge does not match!");
-
-	if(auth.num != AuthAc || tsmemcmp(auth.chal, tr.chal, CHALLEN) != 0)
-		sysfatal("cchallenge does not match!");
-
-	// Create the authenticator, then make our own proving we can make them
-	memset(&auth, 0, sizeof(auth));
-	auth.num = AuthAs;
-	memmove(srand, auth.rand, NONCELEN);
-	genrandom(srand + NONCELEN, NONCELEN);
-	memmove(auth.chal, cchal, CHALLEN);
-	memmove(auth.rand, srand + NONCELEN, NONCELEN);
-
-	if((n = convA2M(&auth, abuf, sizeof(abuf), &t)) < 0)
-		sysfatal("unable to convert authenticator to message");
-
-	if(write(0, abuf, n) != n)
-		sysfatal("short write sending authenticator");
-
-	ai = mallocz(sizeof(AuthInfo), 1);
-	ai->suid = t.suid;
-	ai->cuid = t.cuid;
-	if(dp9ik){
-		static char info[] = "Plan 9 session secret";
-
-		ai->nsecret = 256;
-		ai->secret = mallocz(ai->nsecret, 1);
-		hkdf_x(srand, 2*NONCELEN,
-			(uchar*)info, sizeof(info)-1,
-			t.key, NONCELEN,
-			ai->secret, ai->nsecret,
-			hmac_sha2_256, SHA2_256dlen
-		);
-	} else {
-		ai->nsecret = 8;
-		ai->secret = mallocz(ai->nsecret, 1);
-		des56to64((uchar*)t.key, ai->secret);
-	}
-
-	memset(&t, 0, sizeof(t));
-	memset(&auth, 0, sizeof(auth));
-	memset(&tr, 0, sizeof(tr));
-	memset(schal, 0, sizeof(schal));
-	memset(srand, 0, sizeof(srand));
 
 	return ai;
 }
