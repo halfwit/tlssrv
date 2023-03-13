@@ -13,28 +13,30 @@
 AuthInfo*
 auth_unix(char *user, char *authdom, Authkey ks)
 {
-	char resp[1024], hello[1024], *proto, *dom;
-	uchar srand[2*NONCELEN], cchal[CHALLEN], yb[PAKYLEN];
+	char cpd[ANAMELEN+DOMLEN+1], spd[2*DOMLEN+18], *proto, *dom;
 	char trbuf[TICKREQLEN+PAKYLEN], abuf[MAXTICKETLEN+MAXAUTHENTLEN];
+	uchar srand[2*NONCELEN], cchal[CHALLEN], y[PAKYLEN];
+
+	Authenticator auth;
 	AuthInfo *ai;
 	PAKpriv p;
-	Authenticator auth;
 	Ticketreq tr;
 	Ticket t;
+
 	int n, m, dp9ik = 0;
 
-        /* Start p9any, we fall back to p9sk1 */
+        /* Start p9any */
 #if P9ANY_VERSION==2
-	sprintf(hello, "v.2 p9sk1@%s dp9ik@%s ", authdom, authdom);
+	n = sprintf(spd, "v.2 p9sk1@%s dp9ik@%s ", authdom, authdom);
 #else
-	sprintf(hello, "p9sk1@%s dp9ik@%s ", authdom, authdom);
+	n = sprintf(spd, "p9sk1@%s dp9ik@%s ", authdom, authdom);
 #endif
-	if(write(1, hello, strlen(hello)+1) != strlen(hello)+1)
+	if(write(1, spd, n+1) != n+1)
 		sysfatal("short write on p9any");
-	if(readstr(0, resp, sizeof resp) < 0)
-		sysfatal("unable to read resp");
+	if(read(0, cpd, ANAMELEN+DOMLEN+1) <= 0)
+		sysfatal("short read on client proto");
 
-	proto = strtok(resp, " ");
+	proto = strtok(cpd, " ");
 	dom = strtok(NULL, " ");
 	if(proto == NULL || dom == NULL)
 		sysfatal("unable to read requested proto and dom pair");
@@ -47,16 +49,14 @@ auth_unix(char *user, char *authdom, Authkey ks)
 		sysfatal("short write on proto challenge OK");
 #endif
 
-	/* p9any success, start protocol */
+	/* p9any success, start selected protocol */
 	memset(&tr, 0, sizeof(tr));
 	tr.type = AuthTreq;
-
-	/* create our keypair */
-	strcpy(tr.authid, user); 
+	strcpy(tr.authid, user);
 	strcpy(tr.authdom, authdom);
 	genrandom((uchar*)tr.chal, CHALLEN);
 
-	if((n = read(0, cchal, CHALLEN)) != CHALLEN)
+	if((n = readn(0, cchal, CHALLEN)) != CHALLEN)
 		sysfatal("short read on p9sk1 challenge");
 
 	m = TICKREQLEN;
@@ -65,32 +65,32 @@ auth_unix(char *user, char *authdom, Authkey ks)
 		m += PAKYLEN;
 	}
 
-	/* Create and send ticket request */
+	/* Create and send ticket request, if dp9ik add in our pakkey */
 	n = convTR2M(&tr, trbuf, m);
 	if(dp9ik)
 		authpak_new(&p, &ks, (uchar *)trbuf + n, 1);
 
-	if(write(1, trbuf, sizeof(trbuf)) < m)
+	if(write(1, trbuf, m) != m)
 		sysfatal("short read sending ticket request");
 
-	/* Read in remote Yb, create Yn */
+	/* Read in ticket key */
 	if(dp9ik){
-		if(read(0, yb, PAKYLEN) != PAKYLEN)
+		if(readn(0, y, PAKYLEN) != PAKYLEN)
 			sysfatal("short read on client pk");
-		if(authpak_finish(&p, &ks, yb))
+		// Despite passing, the tickets here are null. Suspecting a mkserverticket
+		if(authpak_finish(&p, &ks, y))
 			sysfatal("unable to decrypt message");
 	}
 
 	/* Read back ticket + authenticator */
-	if((n = read(0, abuf, sizeof(abuf))) < 0)
+	if((n = readn(0, abuf, MAXTICKETLEN+MAXAUTHENTLEN)) != MAXTICKETLEN+MAXAUTHENTLEN)
 		sysfatal("short read receiving ticket");
 
 	m = convM2T(abuf, n, &t, &ks);
 	if(m <= 0 || convM2A(abuf+m, n-m, &auth, &t) <= 0)
 		sysfatal("short read on ticket");
 
-// Failing to decrypt the tickets here
-fprint(2, "AuthTS expected %d; got %d\n", AuthTs, t.num);
+fprint(2, "AuthTS expected %d; got %d; form %d \n", AuthTs, t.num, t.form);
 	if(dp9ik && t.form == 0)
 		sysfatal("form was wrong");
 		//sysfatal("unix_auth: auth protocol botch");
