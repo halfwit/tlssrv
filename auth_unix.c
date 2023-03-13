@@ -77,7 +77,7 @@ auth_unix(char *user, char *authdom, Authkey ks)
 	if(dp9ik){
 		if(readn(0, y, PAKYLEN) != PAKYLEN)
 			sysfatal("short read on client pk");
-		// Despite passing, the tickets here are null. Suspecting a mkserverticket
+/* BUG: We don't have a good ticket after decrypting with the key finished here */
 		if(authpak_finish(&p, &ks, y))
 			sysfatal("unable to decrypt message");
 	}
@@ -85,11 +85,10 @@ auth_unix(char *user, char *authdom, Authkey ks)
 	/* Read back ticket + authenticator */
 	if((n = readn(0, abuf, MAXTICKETLEN+MAXAUTHENTLEN)) != MAXTICKETLEN+MAXAUTHENTLEN)
 		sysfatal("short read receiving ticket");
-
 	m = convM2T(abuf, n, &t, &ks);
 	if(m <= 0 || convM2A(abuf+m, n-m, &auth, &t) <= 0)
 		sysfatal("short read on ticket");
-
+// wrong.
 fprint(2, "AuthTS expected %d; got %d; form %d \n", AuthTs, t.num, t.form);
 	if(dp9ik && t.form == 0)
 		sysfatal("form was wrong");
