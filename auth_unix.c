@@ -61,6 +61,7 @@ auth_unix(char *user, char *authdom, Authkey ks)
 
 	m = TICKREQLEN;
 	if(dp9ik){
+		authpak_hash(&ks, user);
 		tr.type = AuthPAK;
 		m += PAKYLEN;
 	}
@@ -68,14 +69,14 @@ auth_unix(char *user, char *authdom, Authkey ks)
 	/* Create and send ticket request, if dp9ik add in our pakkey */
 	n = convTR2M(&tr, trbuf, m);
 	if(dp9ik)
-		authpak_new(&p, &ks, (uchar *)trbuf + n, 1);
+		authpak_new(&p, &ks, (uchar *)trbuf+n, 1);
 
-	if(write(1, trbuf, m) != m)
+	if(write(1, trbuf, m) < m)
 		sysfatal("short read sending ticket request");
 
 	/* Read in ticket key */
 	if(dp9ik){
-		if(readn(0, y, PAKYLEN) != PAKYLEN)
+		if(readn(0, y, PAKYLEN) < PAKYLEN)
 			sysfatal("short read on client pk");
 /* BUG: We don't have a good ticket after decrypting with the key finished here */
 		if(authpak_finish(&p, &ks, y))
@@ -89,17 +90,14 @@ auth_unix(char *user, char *authdom, Authkey ks)
 	if(m <= 0 || convM2A(abuf+m, n-m, &auth, &t) <= 0)
 		sysfatal("short read on ticket");
 // wrong.
-fprint(2, "AuthTS expected %d; got %d; form %d \n", AuthTs, t.num, t.form);
 	if(dp9ik && t.form == 0)
-		sysfatal("form was wrong");
-		//sysfatal("unix_auth: auth protocol botch");
+		sysfatal("unix_auth: auth protocol botch");
 
 	if(t.num != AuthTs || tsmemcmp(t.chal, tr.chal, CHALLEN) != 0)
-		sysfatal("authnum was wrong or challenge was wrong");
-		//sysfatal("auth protocol botch");
+		sysfatal("auth protocol botch");
 
 	if(auth.num != AuthAc || tsmemcmp(auth.chal, tr.chal, CHALLEN) != 0)
-		sysfatal("cchallenge does not match!");
+		sysfatal("auth.num or cchallenge was wrong");
 		//sysfatal("auth protocol botch");
 
 	/* Create and send our authenticator */

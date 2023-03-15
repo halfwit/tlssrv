@@ -30,41 +30,43 @@ SSL *ssl_conn;
 char *argv0;
 
 int
-readpk(Authkey *ak)
+readpk(Authkey *ak, char *keyfile)
 {
-	char buf[1024], *bbuf, *p, *type, *key, *host;
-	int fd, n;
+	char buf[2*AESKEYLEN+DOMLEN+ANAMELEN], *args[3];
+	int fd, n, i, found = 0;
 
-	fd = open("/tmp/.p9key", O_RDONLY);
+	fd = open(keyfile, O_RDONLY);
 	if(fd < 0)
 		return -1;
 
 	if((n = read(fd, buf, sizeof buf)) < 0)
 		return -1;
-	bbuf = buf;
 
-	if((p = strchr(bbuf, '\0')))
-		*p++ = 0;
-	if((type = strchr(bbuf, ':')) == nil)
-		return -1;
-	*type++ = 0;
-	if((host = strchr(type, ':')) == nil)
-		return -1;
-	*host++ = 0;
-	if((key = strchr(host, ':')) == nil)
-		return -1;
-	*key++ = 0;
-	if(strcmp(type, "aes") == 0)
-		memcpy(ak->aes, key, AESKEYLEN);
-	if(strcmp(type, "des") == 0)
-		memcpy(ak->aes, key, DESKEYLEN);
-	authserver = strdup(bbuf);
+	for(i = 0; i <= n; i++){
+		if(buf[i] == '\n'){
+			buf[i] = 0;
+			n = i;
+		}
+		if(buf[i] == ':') {
+			found = ++i;
+		}
+	}
 
-	if(!host)
-		return -1;
+	ak = mallocz(sizeof(Authkey), 1);
+	memcpy(ak->aes, buf+found, n-found);
 
-	authpak_hash(ak, host);
-	user = strdup(host);
+	if(getfields(buf, args, 3, 1, ":") != 3)
+		sysfatal("malformed key data");
+
+	// TODO: Also parse out des keys, multiple lines allowed for older p9sk1
+	if(strcmp(args[1], "aes") != 0)
+		sysfatal("Only AES keys are supported");
+
+	user = strdup(args[0]);
+	authserver = strdup(args[2]);
+
+	memset(buf, 0, sizeof(buf));
+	close(fd);
 	return n;
 }
 
@@ -121,7 +123,7 @@ srv9pauth(Authkey key)
 void
 usage(void)
 {
-	fprint(2, "usage: tlssrv [-D] -[a [-k keyfile] [-A authdom]] [-c cert] cmd [args...]\n");
+	fprint(2, "usage: tlssrv [-D] -[a [-k keyfile] [-d authdom]] [-c cert] cmd [args...]\n");
 	exits("usage");
 }
 
@@ -130,10 +132,12 @@ main(int argc, char **argv)
 {
 	int io, uid;
 	Authkey key;
+	char *keyfile = nil;
 
 	ARGBEGIN {
 	case 'a': authserver = EARGF(usage()); break;
-	case 'A': authdom = EARGF(usage()); break;
+	case 'd': authdom = EARGF(usage()); break;
+	case 'k': keyfile = EARGF(usage()); break;
 	} ARGEND
 
 	if(*argv == nil)
@@ -142,7 +146,10 @@ main(int argc, char **argv)
 	if(authdom == nil)
 		authdom = "9front";
 
-	if(readpk(&key) <= 0)
+	if(keyfile == nil)
+		keyfile = "/tmp/.p9key";
+
+	if(readpk(&key, keyfile) <= 0)
 		sysfatal("unable to parse authentication keys");
 	
 	SSL_library_init();

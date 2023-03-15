@@ -111,18 +111,20 @@ main(int argc, char *argv[])
 	close(afd);
 
 	passtokey(&key, pass);
-	memset(&pass, 0, sizeof(pass));
 
 	if(!sizeof(key.aes))
 		sysfatal("no aes key found for user");
 
-	fd = open(keyfile, O_CREAT|O_WRONLY);
+	fd = open(keyfile, O_CREAT|O_RDWR);
 	if(fd < 0)
 		sysfatal("unable to write to tmp");
 
-	fprint(fd, "%s:aes:%s:%s\n", authserver, user, key.aes);
+	fprint(fd, "%s:aes:%s:", authserver, user);
+	write(fd, key.aes, sizeof(key.aes));
+
 	print("aes key written successfully\n");
 
+	memset(&pass, 0, sizeof(pass));
 	memset(&key, 0, sizeof(key));
 	close(fd);
 	exit(0);
