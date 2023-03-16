@@ -89,7 +89,6 @@ auth_unix(char *user, char *authdom, Authkey ks)
 	m = convM2T(abuf, n, &t, &ks);
 	if(m <= 0 || convM2A(abuf+m, n-m, &auth, &t) <= 0)
 		sysfatal("short read on ticket");
-// wrong.
 	if(dp9ik && t.form == 0)
 		sysfatal("unix_auth: auth protocol botch");
 
@@ -97,8 +96,7 @@ auth_unix(char *user, char *authdom, Authkey ks)
 		sysfatal("auth protocol botch");
 
 	if(auth.num != AuthAc || tsmemcmp(auth.chal, tr.chal, CHALLEN) != 0)
-		sysfatal("auth.num or cchallenge was wrong");
-		//sysfatal("auth protocol botch");
+		sysfatal("auth protocol botch");
 
 	/* Create and send our authenticator */
 	memmove(srand, auth.rand, NONCELEN);
@@ -115,6 +113,8 @@ auth_unix(char *user, char *authdom, Authkey ks)
 
 	ai = establish(&t, srand, dp9ik);
 	memset(&ks, 0, sizeof(ks));
+	memset(&t, 0, sizeof(t));
+	memset(&auth, 0, sizeof(auth));
 
 	return ai;
 }

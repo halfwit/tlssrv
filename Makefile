@@ -18,8 +18,8 @@ tlsclient: cpu.$O $(LIBS)
 tlssrv: srv.$O $(LIBS)
 	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ srv.$O $(LIBS)
 
-get9pkey: login.$O $(LIBS)
-	$(CC) -o $@ login.$O $(LIBS)
+wrkey: wrkey.$O $(LIBS)
+	$(CC) -o $@ wrkey.$O $(LIBS)
 
 cpu.$O: cpu.c
 	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
@@ -39,15 +39,15 @@ libc/libc.a:
 libsec/libsec.a:
 	(cd libsec; $(MAKE))
 
-all: tlsclient tlssrv get9pkey 
+all: tlsclient tlssrv wrkey 
 
 .PHONY: clean
 clean:
-	rm -f *.o lib*/*.o lib*/*.a tlsclient tlssrv get9pkey
+	rm -f *.o lib*/*.o lib*/*.a tlsclient tlssrv wrkey 
 
 .PHONY: tlsclient.install
 tlsclient.install: tlsclient tlsclient.1
 	cp tlsclient $(PREFIX)/bin
 	cp tlsclient.1 $(PREFIX)/man/man1/
 	cp tlssrv $(PREFIX)/bin
-	cp get9pkey $(PREFIX)/bin
+	cp wrkey $(PREFIX)/bin

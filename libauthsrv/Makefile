@@ -20,8 +20,9 @@ OFILES=\
 	convTR2M.$O\
 	_asgetpakkey.$O\
 	_asgetresp.$O\
-#	nvcsum.$O\
-#	readcons.$O\
+	readnvram.$O\
+	readcons.$O\
+	nvcsum.$O\
 	
 
 default: $(LIB)

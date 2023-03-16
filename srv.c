@@ -30,44 +30,20 @@ SSL *ssl_conn;
 char *argv0;
 
 int
-readpk(Authkey *ak, char *keyfile)
+nvram2key(Authkey *key)
 {
-	char buf[2*AESKEYLEN+DOMLEN+ANAMELEN], *args[3];
-	int fd, n, i, found = 0;
+	Nvrsafe safe;
+	if(readnvram(&safe, 0) < 0 && safe.authid[0] == 0)
+		return -1;	
 
-	fd = open(keyfile, O_RDONLY);
-	if(fd < 0)
-		return -1;
+	memset(key, 0, sizeof(Authkey));
+	memmove(key->des, safe.machkey, DESKEYLEN);
+	memmove(key->aes, safe.aesmachkey, AESKEYLEN);
 
-	if((n = read(fd, buf, sizeof buf)) < 0)
-		return -1;
-
-	for(i = 0; i <= n; i++){
-		if(buf[i] == '\n'){
-			buf[i] = 0;
-			n = i;
-		}
-		if(buf[i] == ':') {
-			found = ++i;
-		}
-	}
-
-	ak = mallocz(sizeof(Authkey), 1);
-	memcpy(ak->aes, buf+found, n-found);
-
-	if(getfields(buf, args, 3, 1, ":") != 3)
-		sysfatal("malformed key data");
-
-	// TODO: Also parse out des keys, multiple lines allowed for older p9sk1
-	if(strcmp(args[1], "aes") != 0)
-		sysfatal("Only AES keys are supported");
-
-	user = strdup(args[0]);
-	authserver = strdup(args[2]);
-
-	memset(buf, 0, sizeof(buf));
-	close(fd);
-	return n;
+	user = strdup(safe.authid);
+	authdom = strdup(safe.authdom);
+	memset(&safe, 0, sizeof safe);
+	return 0;
 }
 
 unsigned int 
@@ -87,11 +63,14 @@ srv9pauth(Authkey key)
 {
 	char b[1024];
 	int n;
+
 	ai = auth_unix(user, authdom, key);
 	if(ai == nil)
-		sysfatal("can't authenticate");
-
-	while(n = SSL_accept(ssl_conn)){
+		sysfatal("unable to authenticate");
+		//return ENOAUTH;
+	
+	printf("%s %s\n", ai->cuid, ai->suid);
+	while((n = SSL_accept(ssl_conn)) < 0){
 		switch(SSL_get_error(ssl_conn, n)){
 			case SSL_ERROR_NONE:
 				return 0;
@@ -110,34 +89,40 @@ srv9pauth(Authkey key)
 				fprint(2, "hello cb function\n");
 				break;
 			case SSL_ERROR_SSL:
+				ERR_error_string(n, b);
+				fprint(2, "Unrecoverable error: %s\n", b);
+				return -1;
 			case SSL_ERROR_SYSCALL:
-				sysfatal("unrecoverable TLS error occured");
+				ERR_error_string(n, b);
+				fprint(2, "Unrecoverable TLS error: %s\n", b);
+				return -1;
 			case SSL_ERROR_WANT_ACCEPT:
 				fprint(2, "want accept called");
 				break;
 		}
 	}
-	return 0;
+
+	return -1;
 }
 
 void
 usage(void)
 {
-	fprint(2, "usage: tlssrv [-D] -[a [-k keyfile] [-d authdom]] [-c cert] cmd [args...]\n");
+	fprint(2, "usage: tlssrv [-D] [-d authdom] [-c cert] -a authserver cmd [args...]\n");
 	exits("usage");
 }
 
 int
 main(int argc, char **argv)
 {
-	int io, uid;
+	int uid;
 	Authkey key;
-	char *keyfile = nil;
+	BIO *rbio;
+	BIO *wbio;
 
 	ARGBEGIN {
 	case 'a': authserver = EARGF(usage()); break;
 	case 'd': authdom = EARGF(usage()); break;
-	case 'k': keyfile = EARGF(usage()); break;
 	} ARGEND
 
 	if(*argv == nil)
@@ -146,12 +131,6 @@ main(int argc, char **argv)
 	if(authdom == nil)
 		authdom = "9front";
 
-	if(keyfile == nil)
-		keyfile = "/tmp/.p9key";
-
-	if(readpk(&key, keyfile) <= 0)
-		sysfatal("unable to parse authentication keys");
-	
 	SSL_library_init();
 	OpenSSL_add_all_algorithms();
 	SSL_load_error_strings();
@@ -168,22 +147,23 @@ main(int argc, char **argv)
 	if(ssl_conn == nil)
 		sysfatal("could not init openssl");
 
-	SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, 0);
+	rbio = BIO_new_fd(0, BIO_NOCLOSE);
+	wbio = BIO_new_fd(1, BIO_NOCLOSE);
+
+	SSL_set_accept_state(ssl_conn);
+	SSL_set_bio(ssl_conn, rbio, wbio);
+	//SL_CTX_set_tlsext_servername_callback(ctx, serverNameCallback);
+
+	//SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, 0);
 	SSL_CTX_set_psk_server_callback(ssl_ctx, psk_server_cb);
 	SSL_CTX_use_psk_identity_hint(ssl_ctx, "p9secret");
 
-	io = open("/dev/null", O_RDWR|O_NONBLOCK);
-	if(SSL_set_fd(ssl_conn, io) == 0)
-		sysfatal("Unable to bind to socket");
+	if(nvram2key(&key) < 0)
+		sysfatal("Unable to parse keys from nvram");
 
 	srv9pauth(key);
 
-	dup2(io, 0);
-	dup2(io, 1);
-	if(io > 2)
-		close(io);
-
-	/* Possibly cap, used with -A sorta in tlssrv proper */
+	fprint(2, "Trying to switch to %s\n", ai->cuid);
 	if(uid_from_user(ai->cuid, &uid) < 0)
 		sysfatal("unable to switch to authenticated user");
 
