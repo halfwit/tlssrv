@@ -21,6 +21,7 @@ extern int errno;
 char *authserver;
 char *authdom;
 char *user;
+char *client;
 
 static AuthInfo *ai;
 
@@ -28,6 +29,9 @@ SSL_CTX *ssl_ctx;
 SSL *ssl_conn;
 
 char *argv0;
+
+//clean exit signal handler
+void suicide(int num) { exit(0); }
 
 int
 nvram2key(Authkey *key)
@@ -50,7 +54,6 @@ unsigned int
 psk_server_cb(SSL *ssl, const char *identity, unsigned char *psk, unsigned int max_psk_len)
 {
 	uint nsecret = ai->nsecret;
-fprint(2, "In psk_server_cb with %s\n", identity);
 	if(max_psk_len < ai->nsecret)
 		sysfatal("psk buffers are too small");
 	memcpy(psk, ai->secret, ai->nsecret);
@@ -68,8 +71,9 @@ srv9pauth(Authkey key)
 	if(ai == nil)
 		sysfatal("unable to authenticate");
 		//return ENOAUTH;
+
+	client = strdup(ai->cuid);
 	
-	printf("%s %s\n", ai->cuid, ai->suid);
 	while((n = SSL_accept(ssl_conn)) < 0){
 		switch(SSL_get_error(ssl_conn, n)){
 			case SSL_ERROR_NONE:
@@ -97,7 +101,7 @@ srv9pauth(Authkey key)
 				fprint(2, "Unrecoverable TLS error: %s\n", b);
 				return -1;
 			case SSL_ERROR_WANT_ACCEPT:
-				fprint(2, "want accept called");
+				//fprint(2, "want accept called");
 				break;
 		}
 	}
@@ -115,10 +119,11 @@ usage(void)
 int
 main(int argc, char **argv)
 {
-	int uid;
+	int io, uid;
 	Authkey key;
 	BIO *rbio;
 	BIO *wbio;
+	pid_t xferc;
 
 	ARGBEGIN {
 	case 'a': authserver = EARGF(usage()); break;
@@ -134,42 +139,60 @@ main(int argc, char **argv)
 	SSL_library_init();
 	OpenSSL_add_all_algorithms();
 	SSL_load_error_strings();
-	ssl_ctx = SSL_CTX_new(TLSv1_2_server_method());
+	ssl_ctx = SSL_CTX_new(TLS_server_method());
+	if(ssl_ctx == nil)
+		sysfatal("could not init openssl");
 	
 #if OPENSSL_VERSION_MAJOR==3
 	SSL_CTX_set_options(ssl_ctx, SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 #endif
-
-	if(ssl_ctx == nil)
-		sysfatal("could not init openssl");
 	
+	const char ciphers[] = "PSK-CHACHA20-POLY1305:PSK-AES128-CBC-SHA256";
+	SSL_CTX_set_psk_server_callback(ssl_ctx, psk_server_cb);
+	if(SSL_CTX_set_cipher_list(ssl_ctx, ciphers) == 0)
+		sysfatal("unable to set cipher list");
+	SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, 0);
+	if(SSL_CTX_use_psk_identity_hint(ssl_ctx, "p9secret") == 0)
+		sysfatal("failure to set identity hint");
+
 	ssl_conn = SSL_new(ssl_ctx);
 	if(ssl_conn == nil)
 		sysfatal("could not init openssl");
 
-	rbio = BIO_new_fd(0, BIO_NOCLOSE);
-	wbio = BIO_new_fd(1, BIO_NOCLOSE);
-
-	SSL_set_accept_state(ssl_conn);
-	SSL_set_bio(ssl_conn, rbio, wbio);
-	//SL_CTX_set_tlsext_servername_callback(ctx, serverNameCallback);
-
-	//SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, 0);
-	SSL_CTX_set_psk_server_callback(ssl_ctx, psk_server_cb);
-	SSL_CTX_use_psk_identity_hint(ssl_ctx, "p9secret");
-
 	if(nvram2key(&key) < 0)
 		sysfatal("Unable to parse keys from nvram");
 
-	srv9pauth(key);
+	rbio = BIO_new_fd(0, BIO_NOCLOSE);
+	wbio = BIO_new_fd(1, BIO_NOCLOSE);
+	SSL_set_bio(ssl_conn, rbio, wbio);
 
-	fprint(2, "Trying to switch to %s\n", ai->cuid);
-	if(uid_from_user(ai->cuid, &uid) < 0)
+	srv9pauth(key);
+	
+	io = open("/dev/null", O_RDWR);
+	dup2(io, 0);
+	dup2(io, 1);
+	
+	if(uid_from_user(client, &uid) < 0)
 		sysfatal("unable to switch to authenticated user");
 
 	if(setuid(uid) != 0)
 		sysfatal("setuid failed");	
 
+	signal(SIGUSR1, suicide);
+	switch((xferc = fork())){
+	case -1:
+		sysfatal("fork");
+	case 0:
+		xferc = getppid();
+
+		xfer(infd, -1, s_recv, tls_send);
+		break;
+	default:
+		xfer(-1, outfd, tls_recv, s_send);
+
+		break;
+	}
+	kill(xferc, SIGUSR1);
 	execvp(*argv, argv);
 	sysfatal("exec");
 }
