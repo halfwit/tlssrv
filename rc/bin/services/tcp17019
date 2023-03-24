@@ -1,0 +1,8 @@
+#!/usr/bin/env rc
+
+fn server {
+	. <{n=`{read} && ! ~ $#n 0 && read -c $n} >[2=1]
+}
+
+exec tlssrv /usr/bin/env rc -vc server
+
