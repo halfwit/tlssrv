@@ -1,17 +1,15 @@
 bin
     # Our files
-	authsrv - - - /usr/local/x9srv/bin/authsrv
-	bind - - - /usr/local/x9srv/bin/bind
-	exportfs - - - /usr/local/x9srv/bin/exportfs
-	srvtls - - - /usr/local/x9srv/bin/srvtls
-	tlsclient - - - /usr/local/x9srv/bin/tlsclient
-	tlssrv - - - /usr/local/x9srv/bin/tlssrv
+	tlssrv - - - /usr/halfwit/x9utils/tlssrv
+	bind - - - /usr/halfwit/x9utils/bind
+	exportfs - - - /usr/halfwit/code/x9srv/o.exportfs
+	tlsclient - - - /usr/halfwit/x9utils/tlsclient
     # Plan9port
 	" - - - /usr/local/plan9/bin/"
 	"" - - - /usr/local/plan9/bin/""
 	9660srv - - - /usr/local/plan9/bin/9660srv
-	9a - - - /usr/local/plan9/bin/9a
-	9ar - - - /usr/local/plan9/bin/9ar
+	#9a - - - /usr/local/plan9/bin/9a
+	#9ar - - - /usr/local/plan9/bin/9ar
 	9c - - - /usr/local/plan9/bin/9c
 	9fs - - - /usr/local/plan9/bin/9fs
 	9import - - - /usr/local/plan9/bin/9import
@@ -125,7 +123,7 @@ bin
 	look - - - /usr/local/plan9/bin/look
 	lookman - - - /usr/local/plan9/bin/lookman
 	ls - - - /usr/local/plan9/bin/ls
-	macargv - - - /usr/local/plan9/bin/macargv
+	#macargv - - - /usr/local/plan9/bin/macargv
 	macedit - - - /usr/local/plan9/bin/macedit
 	man - - - /usr/local/plan9/bin/man
 	mapd - - - /usr/local/plan9/bin/mapd
@@ -272,55 +270,6 @@ bin
 	zcat - - - /usr/local/plan9/bin/zcat
 	zerotrunc - - - /usr/local/plan9/bin/zerotrunc
 	zip - - - /usr/local/plan9/bin/zip
-    disk - - - /usr/local/plan9/bin/disk
-        mkext - - - /usr/local/plan9/bin/disk/mkext
-		mkfs - - - /usr/local/plan9/bin/disk/mkfs
-    fossil - - - /usr/local/plan9/bin/fossil
-		conf - - - /usr/local/plan9/bin/fossil/conf
-		flchk - - - /usr/local/plan9/bin/fossil/flchk
-		flfmt - - - /usr/local/plan9/bin/fossil/flfmt
-		fossil - - - /usr/local/plan9/bin/fossil/fossil
-		last - - - /usr/local/plan9/bin/fossil/last
-		view - - - /usr/local/plan9/bin/fossil/view
-    fs - - - /usr/local/plan9/bin/fs
-		32vfs - - - /usr/local/plan9/bin/fs/32vfs
-		cpiofs - - - /usr/local/plan9/bin/fs/cpiofs
-		tapfs - - - /usr/local/plan9/bin/fs/tapfs
-		tarfs - - - /usr/local/plan9/bin/fs/tarfs
-		tpfs - - - /usr/local/plan9/bin/fs/tpfs
-		v10fs - - - /usr/local/plan9/bin/fs/v10fs
-		v6fs - - - /usr/local/plan9/bin/fs/v6fs
-		zipfs - - - /usr/local/plan9/bin/fs/zipfs
-    upas - - - /usr/local/plan9/bin/upas
-		isspam - - - /usr/local/plan9/bin/upas/isspam
-		msgcat - - - /usr/local/plan9/bin/upas/msgcat
-		spam - - - /usr/local/plan9/bin/upas/spam
-		spambox - - - /usr/local/plan9/bin/upas/spambox
-		unspam - - - /usr/local/plan9/bin/upas/unspam
-		unspambox - - - /usr/local/plan9/bin/upas/unspambox
-    venti - - - /usr/local/plan9/bin/venti
-		buildindex - - - /usr/local/plan9/bin/venti/buildindex
-		checkarenas - - - /usr/local/plan9/bin/venti/checkarenas
-		checkindex - - - /usr/local/plan9/bin/venti/checkindex
-		clumpstats - - - /usr/local/plan9/bin/venti/clumpstats
-		conf - - - /usr/local/plan9/bin/venti/conf
-		copy - - - /usr/local/plan9/bin/venti/copy
-		dump - - - /usr/local/plan9/bin/venti/dump
-		findscore - - - /usr/local/plan9/bin/venti/findscore
-		fixarenas - - - /usr/local/plan9/bin/venti/fixarenas
-		fmtarenas - - - /usr/local/plan9/bin/venti/fmtarenas
-		fmtbloom - - - /usr/local/plan9/bin/venti/fmtbloom
-		fmtindex - - - /usr/local/plan9/bin/venti/fmtindex
-		fmtisect - - - /usr/local/plan9/bin/venti/fmtisect
-		mirrorarenas - - - /usr/local/plan9/bin/venti/mirrorarenas
-		printarena - - - /usr/local/plan9/bin/venti/printarena
-		printarenapart - - - /usr/local/plan9/bin/venti/printarenapart
-		rdarena - - - /usr/local/plan9/bin/venti/rdarena
-		read - - - /usr/local/plan9/bin/venti/read
-		ro - - - /usr/local/plan9/bin/venti/ro
-		sync - - - /usr/local/plan9/bin/venti/sync
-		syncindex - - - /usr/local/plan9/bin/venti/syncindex
-		venti - - - /usr/local/plan9/bin/venti/venti
-		verifyarena - - - /usr/local/plan9/bin/venti/verifyarena
-		wrarena - - - /usr/local/plan9/bin/venti/wrarena
-		write - - - /usr/local/plan9/bin/venti/write
+	service - - - /usr/halfwit/x9utils/services
+		tcp17019 - - - /usr/halfwit/x9utils/services/tcp17019
+

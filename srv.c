@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <errno.h>
@@ -33,12 +34,28 @@ char *argv0;
 //clean exit signal handler
 void suicide(int num) { exit(0); }
 
+typedef size_t (*iofunc)(int, void*, size_t);
+size_t tls_send(int f, void *b, size_t n) { return SSL_write(ssl_conn, b, n); }
+size_t tls_recv(int f, void *b, size_t n) { return SSL_read(ssl_conn, b, n); }
+size_t s_send(int f, void *b, size_t n) { return write(f, b, n); }
+size_t s_recv(int f, void *b, size_t n) { return read(f, b, n); }
+
+void
+xfer(int from, int to, iofunc recvf, iofunc sendf)
+{
+	char buf[12*1024];
+	size_t n;
+
+	while((n = recvf(from, buf, sizeof buf)) > 0 && sendf(to, buf, n) == n)
+		;
+}
+
 int
 nvram2key(Authkey *key)
 {
 	Nvrsafe safe;
 	if(readnvram(&safe, 0) < 0 && safe.authid[0] == 0)
-		return -1;	
+		return -1;
 
 	memset(key, 0, sizeof(Authkey));
 	memmove(key->des, safe.machkey, DESKEYLEN);
@@ -50,7 +67,7 @@ nvram2key(Authkey *key)
 	return 0;
 }
 
-unsigned int 
+unsigned int
 psk_server_cb(SSL *ssl, const char *identity, unsigned char *psk, unsigned int max_psk_len)
 {
 	uint nsecret = ai->nsecret;
@@ -69,14 +86,18 @@ srv9pauth(Authkey key)
 
 	ai = auth_unix(user, authdom, key);
 	if(ai == nil)
-		sysfatal("unable to authenticate");
+		sysfatal("auth_unix: unable to authenticate");
 		//return ENOAUTH;
 
 	client = strdup(ai->cuid);
 	
+	SSL_set_rfd(ssl_conn, 0);
+	SSL_set_wfd(ssl_conn, 1);
+
 	while((n = SSL_accept(ssl_conn)) < 0){
 		switch(SSL_get_error(ssl_conn, n)){
 			case SSL_ERROR_NONE:
+				fprint(2, "Successful connect\n");
 				return 0;
 			case SSL_ERROR_ZERO_RETURN:
 				fprint(2, "Remote connection closed unexpectedly\n");
@@ -101,12 +122,13 @@ srv9pauth(Authkey key)
 				fprint(2, "Unrecoverable TLS error: %s\n", b);
 				return -1;
 			case SSL_ERROR_WANT_ACCEPT:
-				//fprint(2, "want accept called");
-				break;
+				ERR_error_string(n, b);
+				fprint(2, "Error want accept: %s\n", b);
+				return -1;
 		}
 	}
 
-	return -1;
+	return 0;
 }
 
 void
@@ -119,10 +141,8 @@ usage(void)
 int
 main(int argc, char **argv)
 {
-	int io, uid;
+	int uid, pin[2], pout[2], infd, outfd;
 	Authkey key;
-	BIO *rbio;
-	BIO *wbio;
 	pid_t xferc;
 
 	ARGBEGIN {
@@ -142,11 +162,11 @@ main(int argc, char **argv)
 	ssl_ctx = SSL_CTX_new(TLS_server_method());
 	if(ssl_ctx == nil)
 		sysfatal("could not init openssl");
-	
+
 #if OPENSSL_VERSION_MAJOR==3
 	SSL_CTX_set_options(ssl_ctx, SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 #endif
-	
+
 	const char ciphers[] = "PSK-CHACHA20-POLY1305:PSK-AES128-CBC-SHA256";
 	SSL_CTX_set_psk_server_callback(ssl_ctx, psk_server_cb);
 	if(SSL_CTX_set_cipher_list(ssl_ctx, ciphers) == 0)
@@ -162,37 +182,56 @@ main(int argc, char **argv)
 	if(nvram2key(&key) < 0)
 		sysfatal("Unable to parse keys from nvram");
 
-	rbio = BIO_new_fd(0, BIO_NOCLOSE);
-	wbio = BIO_new_fd(1, BIO_NOCLOSE);
-	SSL_set_bio(ssl_conn, rbio, wbio);
+	if(srv9pauth(key) < 0)
+		sysfatal("unable to authenticate");
 
-	srv9pauth(key);
-	
-	io = open("/dev/null", O_RDWR);
-	dup2(io, 0);
-	dup2(io, 1);
-	
-	if(uid_from_user(client, &uid) < 0)
-		sysfatal("unable to switch to authenticated user");
+	pipe(pin);
+	pipe(pout);
 
-	if(setuid(uid) != 0)
-		sysfatal("setuid failed");	
+	switch(fork()){
+	case -1:
+		sysfatal("fork");
+	case 0:
+		/* cmd thread */
+		close(pin[1]);
+		close(pout[0]);
+		dup2(pin[0], 0);
+		dup2(pout[1], 1);
+
+		/* Exec child as uid */
+		if(uid_from_user(client, &uid) < 0)
+			sysfatal("unable to switch to authenticated user");
+
+		if(setuid(uid) != 0)
+			sysfatal("setuid failed");
+
+		execvp(argv[0], argv);
+		sysfatal("exec failed");
+	}
+
+	/* Parent thread */
+	close(pin[0]);
+	close(pout[1]);
+	infd = pin[1];
+	outfd = pout[0];
+
 
 	signal(SIGUSR1, suicide);
 	switch((xferc = fork())){
 	case -1:
 		sysfatal("fork");
 	case 0:
+		/* Read from our pipe, out to our SSL */
 		xferc = getppid();
-
-		xfer(infd, -1, s_recv, tls_send);
+		xfer(outfd, -1, s_recv, tls_send);
 		break;
 	default:
-		xfer(-1, outfd, tls_recv, s_send);
-
+		/* Read from our SSL, out to our pipe */
+		xfer(-1, infd, tls_recv, s_send);
 		break;
 	}
+	SSL_free(ssl_conn);
+	SSL_CTX_free(ssl_ctx);
+
 	kill(xferc, SIGUSR1);
-	execvp(*argv, argv);
-	sysfatal("exec");
 }

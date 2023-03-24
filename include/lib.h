@@ -128,6 +128,9 @@ extern	char*	utfrrune(char*, long);
 #define DMWRITE		0x2		/* mode bit for write permission */
 #define DMEXEC		0x1		/* mode bit for execute permission */
 
+#define	STATMAX	65535U	/* max length of machine-independent stat structure */
+#define	DIRMAX	(sizeof(Dir)+STATMAX)	/* max length of Dir structure */
+
 typedef struct Lock
 {
 #ifdef PTHREAD

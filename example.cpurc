@@ -6,54 +6,19 @@ host=''
 networks=()
 
 fn usage {
-	echo 'usage: cpurc cpuproto' >[1=2]
+	echo 'usage: '^$0^' cpuproto' >[1=2]
 	exit usage 
-}
-
-fn server {
-	# WIP!
-	tmp=`{mktemp -d}
-
-	# An example proto has been provided
-	# this will make sure we have all the necessary files and directories to run our listener
-	$PLAN9/bin/disk/mkfs -a $1 | $PLAN9/bin/disk/mkext -d $tmp
-
-	# Try to chroot and read commands from the remote connection
-	/usr/sbin/chroot $tmp /bin/rc <{n=`{read} && ! ~ $#n 0 && read -c $n} >[2=1]
-
-	# Clean up
-	fusermount $tmp
 }
 
 if(~ $#1 0)
 	usage
 
-# List all of the IPs with an inet
-# Allow the user to input their prefered one
-# listen1 does not seem to listen correctly on *
-first=0
-networks=`{ifconfig | awk '/inet / { print $2 }' | grep -v 127.0.0.1}
-if(~ $#networks 1)
-	return $networks(1)
-if not {
-	echo 'Select IP to bind to (enter for default)'
-	for(i in $networks){ 
-		if(~ $first 0)
-			echo $i [default]
-		if not	
-			echo $i
-		first=1
-	}
-	host=`{awk '{print;exit}'}
-	if(~ $#host 0)
-		host=$networks(1)
-}
-if(~ $#host 0)
-	host=127.0.0.1
-
 # Create our key cache if we don't have one already
-test -f /tmp/.p9key || get9pkey
+test -f /tmp/nvram || wrkey 
 
-# Fire off server each time a client connects
-listen1 -v -t tcp!$host!17019 tlssrv /bin/rc -c server
+# An example proto has been provided
+# this will make sure we have all the necessary files and directories to run our listener
+$PLAN9/bin/disk/mkfs -a $1 | $PLAN9/bin/disk/mkext -d $tmp
+
+# Set up a jail
 
