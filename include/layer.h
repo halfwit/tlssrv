@@ -1,8 +1,15 @@
 /* We pass our main layer struct in to fuse, and can pull it out of the void */
 
+
 struct Layer {
-/* A layer does the things */
+	Layer *next;
+
+	/* Can be nullable if not a 9p layer */
+	FFid *rootfid;
+	FFid *authfid;
 };
+
+extern Layer *root;
 
 int lgetattr(const char *, struct stat *);
 int lmkdir(const char *, mode_t);
