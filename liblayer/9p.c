@@ -15,7 +15,8 @@
 #include <u.h>
 #include <libc.h>
 #include <fcall.h>
-#include <9p.h>
+#include <layer.h>
+#include "9p.h"
 
 char *calls2str[] = {
   [Tversion]=	"Tversion",
@@ -202,8 +203,10 @@ FFid*
 _9pwalk(const char *path)
 {
 	FFid	*f;
+	FFid    *rootfid;
 	char	*pnew;
 
+	rootfid = (FFid*) lookup9proot(path);
 	if(*path == '\0' || strcmp(path, "/") == 0)
 		return fidclone(rootfid);
 	pnew = estrdup(path);
@@ -513,7 +516,7 @@ lookupfid(u32int fid, int act)
 		*floc = f;
 		break;
 	case DEL:
-		if(*floc == NULL || *floc == rootfid)
+		if(*floc == NULL) /* We don't check if the floc is root here, we do it higher up */
 			return NULL;
 		f = *floc;
 		*floc = f->link;

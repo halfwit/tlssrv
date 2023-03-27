@@ -1,17 +1,3 @@
-/** 
- * FUSE filesystem shim to recreate 9 semantics on a Unix system
- * This is a naive file tree, we don't support unmounting currently 
- *
- * It will create the following devices:
- *  - /dev/namespace    report the current ordered list of mounts and binds
- *  			mount device, write "from to args" on stdin, creating mount like 9pfs
- * 			bind device, write "from to args" on stdin, creating bind like unionfs
- *  - /dev/cons		forward io to /dev/fd/0 /dev/fd/1 /dev/fd/2
- *
- * After mount/bind commands, it will also intercept any calls to the new directories and issue either a 9p command
- *   or return the underlying directory; which may itself result in a 9p command
- */
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -24,29 +10,8 @@
 #include <unistd.h>
 #include <fuse.h>
 
-#include <u.h>
-#include <args.h>
-#include <libc.h>
 #include <9p.h>
 
-/* TODO:
- *       Associate each 9p lookup with a specific mount, based on dir 
- *       Highest dir is used first (such as newest bind, -a -b etc)
- * 	 Check in each handler for a hit on an overlayment
- *	 return reroot, command, or 9p
- *
- *       Pass rootfid of lookup where appropriate, instead of a global in 9p.h
- *         instead, it will be held in the layer struct for a specific connection
- *         passed in if it is the highest order layer for a given path
- *	 For each path, we need a inexpensive lookup solving order.
- *         we are passed in a path for bind, so lookups on specific files will
- *         be as simple as parsing out the basedir and matching the priority order 
- *         the rootfid is the fid of the mount, or the fid of the <old> in the case of a bind
- */
-
-/* Investigate what we really need here. /dev/cons should exist, and most likely it will end up overlayed but we also need to pipe i/o into it correctly - do we wrap it in a script as well at spinup to read/write from the fds; or do we do that in a separate thread on startup to ensure it happens without intervention? */
-char 	*cons = "/dev/cons";
-char	*nsf = "/dev/namespace";
 Dir	*rootdir;
 
 #define CACHECTL ".fscache"
@@ -59,41 +24,21 @@ enum
 	AFTER = 1
 };
 
-typedef FLayer FLayer;
-struct FLayer 
-{
-	FDir *lower; /* Nullable */
-	/* Or we use path for before/after ... /dev/fd/0 /mnt/foo being always after
-	   /srv/banana /mnt/banana
-	   bind -a /mnt/banana /usr/halfwit/banana
-	   bind -b /mnt/banana /usr/halfwit/banana
-	*/
-	FFid *rootfid;
-	FFid *authfid;
-	int order;
-	/* Check rootfid for nil to see if ismounted */
-};
-
-FLayer *base;
 void	dir2stat(struct stat*, Dir*);
-Dir	*isoverlay(const char*);
 Dir	*iscached(const char*);
 Dir	*addtocache(const char*);
 void	clearcache(const char*);
 int	iscachectl(const char*);
-int	ismounted(const char*);
 char	*breakpath(char*);
 void	usage(void);
 
 int
 fsstat(const char *path, struct stat *st)
 {
-	/* Check overlay */
 	FFid	*f;
 	Dir	*d;
 
-	/* Fetch rootfid struct if 9p, otherwile return underlying real file */
-	if((f = _9pwalk(bind->rootfid, path)) == NULL)
+	if((f = _9pwalk(path)) == NULL)
 		return -EIO;
 	if((d = _9pstat(f)) == NULL){
 		_9pclunk(f);
@@ -109,24 +54,6 @@ int
 fsgetattr(const char *path, struct stat *st)
 {
 	Dir	*d;
-	if((d = isoverlay(path) != NULL) {
-		dir2stat(st, d);
-		return 0; 
-	}
-	if(strcmp(path, cons) == 0){
-		st->st_mode = 0666 | S_IFREG;
-		st->st_uid = getuid();
-		st->st_gid = getgid();
-		st->st_size = 0; /* TODO: is there a default here 9 expects? */
-		return 0;
-	}
-	if(strcmp(path, nsf) == 0){
-		st->st_mode = 0666 | S_IFREG;
-		st->st_uid = getuid();
-		st->st_gid = getgid();
-		st->st_size = 0; /* TODO: sizeof nsf->data */
-		return 0;
-	}
 	if(iscachectl(path)){
 		st->st_mode = 0666 | S_IFREG;
 		st->st_uid = getuid();
@@ -150,16 +77,8 @@ fstruncate(const char *path, off_t off)
 	FFid	*f;
 	Dir	*d;
 
-	if(strcmp(path, cons) == 0)
-		return -EIO;
-	/* TODO: static filesize, but does read offset get set to off */
-	if(strcmp(path, nsf) == 0)
-		return -EIO;
 	if(iscachectl(path))
 		return 0;
-	/* Check overlay and see if we have a mounted dir, grab rootfid
-	   otherwise, truncate on real file
-	 */
 	if((f = _9pwalk(path)) == NULL)
 		return -ENOENT;
 	if(off == 0){
@@ -193,13 +112,6 @@ fsrename(const char *opath, const char *npath)
 	FFid	*f;
 	char	*dname, *bname;
 
-	if(strcmp(opath, cons) == 0 || strcmp(opath, nsf) == 0)
-		return -EACCES;
-	if(iscachectl(opath))
-		return -EACCES;
-	/* Check overlay here, if we have rootfid use it to 9pwalk  
-	   otherwise use os rename on the path 
-	 */
 	if((f = _9pwalk(opath)) == NULL)
 		return -ENOENT;
 	dname = estrdup(npath);
@@ -232,19 +144,8 @@ fsopen(const char *path, struct fuse_file_info *ffi)
 {
 	FFid	*f;
 
-	/* no-op, rw on standard fds */
-	if(strcmp(path, cons) == 0)
-		return 0;
-
-	/* TODO: Set up ffid and assign to ffi->fh */
-	if(strcmp(path, nsf) == 0)
-		return 0;
-
 	if(iscachectl(path))
 		return 0;
-	/* TODO: Check overlay, if we have rootfid use it to 9pwalk
-	         otherwise return normal open
-	 */
 	if((f = _9pwalk(path)) == NULL)
 		return -ENOENT;
 	f->mode = ffi->flags & O_ACCMODE;
@@ -264,15 +165,8 @@ fscreate(const char *path, mode_t perm, struct fuse_file_info *ffi)
 	FFid	*f;
 	char	*dname, *bname;
 
-	/* no-op, rw on standard fds */
-	if(strcmp(path, cons) == 0)
-		return 0;	
-	/* TODO: Set up ffid and assign to ffi->fh */
-	if(strcmp(path, nsf) == 0)
-		return -EACCES;
 	if(iscachectl(path))
 		return -EACCES;
-	/* TODO: check overlay here, we don't check cache */
 	if((f = _9pwalk(path)) == NULL){
 		dname = estrdup(path);
 		bname = breakpath(dname);
@@ -306,11 +200,6 @@ fsunlink(const char *path)
 {
 	FFid	*f;
 
-	if(strcmp(path, cons) == 0 || strcmp(path, nsf) == 0)
-		return -EACCES;
-	if(iscachectl(path))
-		return 0;
-	/* TODO: Check overlay here, we don't check cache */
 	if((f = _9pwalk(path)) == NULL)
 		return -ENOENT;
 	if(_9premove(f) == -1)
@@ -326,16 +215,6 @@ fsread(const char *path, char *buf, size_t size, off_t off,
 	FFid	*f;
 	int 	r;
 
-	if(strcmp(path, cons) == 0){
-		if((r = read(0, buf, size)) < 0)
-			return -EIO;
-		return r;
-	}
-
-	// TODO: return our namespace listing, followed by cd /pwd
-	if(strcmp(path, nsf) == 0)
-		return 0;
-
 	if(iscachectl(path)){
 		size = CACHECTLSIZE;
 		if(off >= size)
@@ -348,7 +227,6 @@ fsread(const char *path, char *buf, size_t size, off_t off,
 	if(f->mode & O_WRONLY)
 		return -EACCES;
 	f->offset = off;
-	/* TODO: check overlay here, we don't check cache */
 	if((r = _9pread(f, buf, size)) < 0)
 		return -EIO;
 	return r;
@@ -360,16 +238,6 @@ fswrite(const char *path, const char *buf, size_t size, off_t off, struct fuse_f
 	FFid	*f;
 	int	r;
 
-	if(strcmp(path, cons) == 0){
-		if((r = write(1, buf, size)) < 0)
-			return -EIO;;
-		return r;
-	}
-
-	// TODO: A mount or bind command, parse
-	if(strcmp(path, nsf) == 0)
-		return 0;
-
 	if(iscachectl(path)){
 		clearcache(path);
 		return size;
@@ -378,7 +246,6 @@ fswrite(const char *path, const char *buf, size_t size, off_t off, struct fuse_f
 	if(f->mode & O_RDONLY)
 		return -EACCES;
 	f->offset = off;
-	/* TODO: Check overlay here, we don't check cache */
 	if((r = _9pwrite(f, (char*)buf, size)) < 0)
 		return -EIO;
 	clearcache(path);
@@ -391,11 +258,6 @@ fsopendir(const char *path, struct fuse_file_info *ffi)
 	FFid	*f;
 	FDir	*d;
 
-	// TODO: create dir for /dev 
-	// We need to check overlay, and then add 
-	// our two files on top
-	if(strcmp(path, "/dev") == 0)
-		return 0;
 	if((d = lookupdir(path, GET)) != NULL){
 		ffi->fh = (u64int)NULL;
 		return 0;
@@ -421,14 +283,10 @@ fsmkdir(const char *path, mode_t perm)
 	FFid	*f;
 	char	*dname, *bname;
 
-	/* Just in case, bail early */
-	if(strcmp(path, "/dev") == 0)
-		return -EEXIST;
 	if((f = _9pwalk(path)) != NULL){
 		_9pclunk(f);
 		return -EEXIST;
 	}
-	/* TODO: Check if we are in an overlayed path here, otherwise regular file semantics */
 	dname = estrdup(path);
 	bname = breakpath(dname);
 	if((f = _9pwalk(dname)) == NULL){
@@ -450,10 +308,6 @@ fsrmdir(const char *path)
 {
 	FFid	*f;
 
-	/* Leave dev alone */
-	if(strcmp(path, "/dev") == 0)
-		return -EACCES;
-	/* TODO: Check if we are in an overlayed path here, otherwise regular file semantics */
 	if((f = _9pwalk(path)) == NULL)
 		return -ENOENT;
 	if((f->qid.type & QTDIR) == 0){
@@ -469,13 +323,6 @@ fsrmdir(const char *path)
 int
 fsrelease(const char *path, struct fuse_file_info *ffi)
 {
-	// Nothing open anymore
-	// Clean up anything in flight
-	if(strcmp(path, cons) == 0)
-		return 0;
-	if(strcmp(path, nsf) == 0)
-		return 0;
-	/* TODO: Check if we are in an overlayed path here, otherwise regular file semantics */
 	return _9pclunk((FFid*)ffi->fh);
 }
 
@@ -483,16 +330,12 @@ int
 fsreleasedir(const char *path, struct fuse_file_info *ffi)
 {
 	FFid	*f;
-
-	// TODO: remove any temp storage on dir we use, offsets/etc
-	if(strcmp(path, "/dev") == 0)
-		return 0;
+	
 	if((FFid*)ffi->fh == NULL)
 		return 0;
 	f = (FFid*)ffi->fh;
 	if((f->qid.type & QTDIR) == 0)
 		return -ENOTDIR;
-	/* TODO: Check if we are in an overlayed path here, otherwise regular file semantics */
 	return _9pclunk(f);
 }
 
@@ -502,8 +345,6 @@ fschmod(const char *path, mode_t perm)
 	FFid	*f;
 	Dir	*d;
 
-	if(strcmp(path, cons) == 0 || strcmp(path, nsf) == 0)
-		return -ENOENT;
 	if((f = _9pwalk(path)) == NULL)
 		return -ENOENT;
 	if((d = _9pstat(f)) == NULL){
@@ -511,7 +352,6 @@ fschmod(const char *path, mode_t perm)
 		return -EIO;
 	}
 	d->mode = perm & 0777;
-	/* TODO: Check if we are in an overlayed path here, otherwise regular file semantics */
 	if(_9pwstat(f, d) == -1){
 		_9pclunk(f);
 		free(d);
@@ -523,24 +363,32 @@ fschmod(const char *path, mode_t perm)
 	return 0;
 }
 
-struct fuse_operations fsops = {
-	.getattr = 	fsgetattr,
-	.truncate = 	fstruncate,
-	.rename = 	fsrename,
-	.open = 	fsopen,
-	.create = 	fscreate,
-	.mknod = 	fsmknod,
-	.unlink =	fsunlink,
-	.read =		fsread,
-	.write =	fswrite,
-	.opendir = 	fsopendir,
-	.mkdir = 	fsmkdir,
-	.rmdir = 	fsrmdir,
-	.readdir = 	fsreaddir,
-	.release =	fsrelease,
-	.releasedir = 	fsreleasedir,
-	.chmod = 	fschmod
-};
+int
+fsreaddir(const char *path, void *data, fuse_fill_dir_t ffd,
+	off_t off, struct fuse_file_info *ffi)
+{
+	FDir		*f;
+	Dir		*d, *e;
+	long		n;
+	struct stat	s;
+
+	ffd(data, ".", NULL, 0);
+	ffd(data, "..", NULL, 0);
+	ffd(data, CACHECTL, NULL, 0);
+	if((f = lookupdir(path, GET)) != NULL){
+		d = f->dirs;
+		n = f->ndirs;
+	}else{
+		if((n = _9pdirread((FFid*)ffi->fh, &d)) < 0)
+			return -EIO;
+	}
+	for(e = d; e < d+n; e++){
+		s.st_ino = e->qid.path;
+		s.st_mode = e->mode & 0777;
+		ffd(data, e->name, &s, 0);
+	}
+	return 0;
+}
 
 void
 dir2stat(struct stat *s, Dir *d)
@@ -629,12 +477,6 @@ addtocache(const char *path)
 }
 
 int
-ismounted(const char *path)
-{
-	/* TODO: walk our structs and check if the final resolved path is from a mount or a local file */
-}
-
-int
 iscachectl(const char *path)
 {
 	char *s;
@@ -654,13 +496,5 @@ breakpath(char *dname)
 	bname = strrchr(dname, '/');
 	*bname++ = '\0';
 	return bname;
-}
-
-
-int
-main(int argc, char *argv[])
-{
-	// Parse args
-	fuse_main(argc, argv, &fsops, NULL);
 }
 

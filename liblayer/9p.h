@@ -33,9 +33,6 @@ struct FDir
 };
 
 extern FILE	*logfile;
-
-extern FFid	*rootfid;
-extern FFid	*authfid;
 extern int	msize;
 extern int	srvfd;
 extern int	debug;
@@ -44,7 +41,7 @@ void	init9p(void);
 int	_9pversion(u32int);
 FFid	*_9pauth(u32int, char*, char*);
 FFid	*_9pattach(u32int, u32int, char*, char*);
-FFid	*_9pwalk(const char*);
+FFid	*_9pwalk(FFid*, const char*);
 FFid	*_9pwalkr(FFid*, char*);
 FFid	*fidclone(FFid*);
 Dir	*_9pstat(FFid*);
