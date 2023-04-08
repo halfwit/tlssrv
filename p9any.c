@@ -12,15 +12,7 @@
 #include "fncs.h"
 
 void errstr(char *s){}
-
-char*
-estrdup(char *s)
-{
-	s = strdup(s);
-	if(s == nil)
-		sysfatal("out of memory");
-	return s;
-}
+char *estrdup(const char *);
 
 static int
 getkey(Authkey *key, char *user, char *dom, char *proto, char *pass)
@@ -299,5 +291,15 @@ again:
 	free(proto);
 
 	return ai;
+}
+
+char *
+estrdup(const char *s)
+{
+	char *r;
+
+	if((r = strdup(s)) == NULL)
+		err(1, "estrdup: out of memory");
+	return r;
 }
 

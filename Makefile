@@ -1,26 +1,33 @@
 ROOT=.
 include ./Make.config
 
-LIBS=\
+SEC=\
 	util.$O\
 	libauthsrv/libauthsrv.a\
 	libmp/libmp.a\
 	libc/libc.a\
 	libsec/libsec.a\
 
+9P=\
+	lib9p/lib9p.a\
+	libc/libc.a\
+
 default: all
 
-tlsclient: cpu.$O $(LIBS) p9any.$O
-	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ cpu.$O $(LIBS) p9any.$O
+tlsclient: cpu.$O $(SEC) p9any.$O
+	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ cpu.$O $(SEC) p9any.$O
 
-tlssrv: srv.$O $(LIBS) auth_unix.$O
-	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ srv.$O $(LIBS) auth_unix.$O
+tlssrv: srv.$O $(SEC) auth_unix.$O
+	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ srv.$O $(SEC) auth_unix.$O
 
-wrkey: wrkey.$O $(LIBS)
-	$(CC) -o $@ wrkey.$O $(LIBS)
+devfs: devshim.$O $(9P)
+	$(CC) `pkg-config $(FUSE) --libs` $(LDFLAGS) -o $@ $(9P) devshim.$O
 
-devfs: devshim.$O $(LIBS) mount.$O bind.$O 9p.$O
-	$(CC) `pkg-config $(FUSE) --libs` $(LDFLAGS) -o $@ devshim.$O $(LIBS) mount.$O bind.$O 9p.$O
+wrkey: wrkey.$O $(SEC)
+	$(CC) -o $@ wrkey.$O $(SEC)
+
+devshim.$O: devshim.c
+	$(CC) `pkg-config $(FUSE) --cflags` $(CFLAGS) $< -o $@
 
 srv.$O: srv.c
 	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
@@ -30,6 +37,9 @@ cpu.$O: cpu.c
 
 %.$O: %.c
 	$(CC) $(CFLAGS) $< -o $@
+
+lib9p/lib9p.a:
+	(cd lib9p; $(MAKE))
 
 libauthsrv/libauthsrv.a:
 	(cd libauthsrv; $(MAKE))

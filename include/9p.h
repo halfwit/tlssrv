@@ -34,28 +34,28 @@ struct FDir
 
 extern FILE	*logfile;
 extern int	msize;
-extern int	srvfd;
 extern int	debug;
 
 void	init9p(void);
-int	_9pversion(u32int);
-FFid	*_9pauth(u32int, char*, char*);
-FFid	*_9pattach(u32int, u32int, char*, char*);
-FFid	*_9pwalk(FFid*, const char*);
-FFid	*_9pwalkr(FFid*, char*);
-FFid	*fidclone(FFid*);
-Dir	*_9pstat(FFid*);
-int	_9pwstat(FFid*, Dir*);
-int	_9pclunk(FFid*);
-int	_9popen(FFid*);
-FFid	*_9pcreate(FFid*, char*, int, int);
-int	_9premove(FFid*);
-int	_9pread(FFid*, char*, u32int);
-int	_9pwrite(FFid*, char*, u32int);
-long	_9pdirread(FFid*, Dir**);
+int	_9pversion(u32int, int);
+FFid	*_9pauth(u32int, char*, char*, int);
+FFid	*_9pattach(u32int, u32int, char*, char*, int);
+FFid	*_9pwalk(FFid*, char*, int);
+FFid	*_9pwalkr(FFid*, char*, int);
+FFid	*fidclone(FFid*, int);
+Dir	*_9pstat(FFid*, int);
+int	_9pwstat(FFid*, Dir*, int);
+int	_9pclunk(FFid*, int);
+int	_9popen(FFid*, int);
+FFid	*_9pcreate(FFid*, char*, int, int, int);
+int	_9premove(FFid*, int);
+int	_9pread(FFid*, char*, u32int, int);
+int	_9pwrite(FFid*, char*, u32int, int);
+long	_9pdirread(FFid*, Dir**, int);
 
 int	dircmp(const void*, const void*);
 FDir	*lookupdir(const char*, int);
+void	dir2stat(struct stat *, Dir *);
 
 #define DPRINT(...)				\
 do{						\
