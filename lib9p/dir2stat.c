@@ -10,7 +10,7 @@
 #include <9p.h>
 
 void
-dir2stat(struct stat *s, Dir *d)
+dir2stat(struct stat *s, Dir *d, int msize)
 {
 	struct passwd	*p;
 	struct group	*g;
