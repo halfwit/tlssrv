@@ -15,7 +15,7 @@
 #include <u.h>
 #include <libc.h>
 #include <fcall.h>
-#include <9p.h>
+#include "devfs.h"
 
 char *calls2str[] = {
   [Tversion]=	"Tversion",

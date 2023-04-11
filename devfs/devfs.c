@@ -11,7 +11,7 @@
 #include <args.h>
 #include <libc.h>
 #include <fcall.h>
-#include <9p.h>
+#include "devfs.h"
 
 enum
 {
@@ -206,13 +206,13 @@ devcreate(const char *path, mode_t perm, struct fuse_file_info *ffi)
 	char  *dname, *bname;
 
 	l = getlayer(path);
+	if(l->cflag == 0)
+		 return -EACCES;
 	if(strcmp(l->path, cons->path) == 0)
 		return 0;
-
 	/* TODO: key this with a unique id for each open handle and wrlock the size/data bits */
 	if(strcmp(l->path, namespace->path) == 0)
 		return 0;
-
 	if(l->rootfid == NULL)
 		return open(l->path, ffi->flags);
 	if((f = _9pwalk(l->rootfid, l->path, l->msize, l->srvfd)) == NULL){
@@ -274,7 +274,6 @@ devread(const char *path, char *buf, size_t size, off_t off, struct fuse_file_in
 			return -EIO;
 		return r;
 	}
-
 	if(strcmp(l->path, namespace->path) == 0){
 		if((r = read(0, namespace->data, size)) < 0)
 			return -EIO;
@@ -284,7 +283,6 @@ devread(const char *path, char *buf, size_t size, off_t off, struct fuse_file_in
 			return -EIO;
 		return r;
 	}
-
 	if(l->rootfid == NULL)
 		return read(ffi->fh, buf, size);
 	f = (FFid*)ffi->fh;
@@ -309,7 +307,6 @@ devwrite(const char *path, const char *buf, size_t size, off_t off, struct fuse_
 			return -EIO;;
 		return r;
 	}
-
 	if(strcmp(l->path, namespace->path) == 0){
 		if((r = write(1, namespace->data, size)) < 0)
 			return -EIO;
@@ -321,7 +318,6 @@ devwrite(const char *path, const char *buf, size_t size, off_t off, struct fuse_
 			return devmount(buf+5);
 		return -EIO;
 	}
-
 	if(l->rootfid == NULL)
 		return write(ffi->fh, buf, size);
 	f = (FFid*)ffi->fh;
@@ -343,7 +339,6 @@ devopendir(const char *path, struct fuse_file_info *ffi)
 	l = getlayer(path);
 	if(strcmp(l->path, "/dev") == 0)
 		return 0;	
-
 	if(l->rootfid == NULL)
 		return 0;
 	if((d = lookupdir(path, GET)) != NULL){
@@ -426,7 +421,6 @@ devrelease(const char *path, struct fuse_file_info *ffi)
 	l = getlayer(path);
 	if(strcmp(l->path, cons->path) == 0 || strcmp(l->path, namespace->path) == 0 || l->rootfid == NULL)
 		return 0;
-
 	return _9pclunk((FFid*)ffi->fh, l->msize, l->srvfd); 
 }
 
@@ -498,14 +492,12 @@ devreaddir(const char *path, void *data, fuse_fill_dir_t ffd, off_t off, struct 
 		}
 		return 0;
 	}
-
 	ffd(data, ".", NULL, 0);
 	ffd(data, "..", NULL, 0);
 	if(strcmp(l->path, "/dev") == 0){
 		ffd(data, cons->path, NULL, 0);
 		ffd(data, namespace->path, NULL, 0);
 	}
-
 	if((f = lookupdir(l->path, GET)) != NULL){
 		d = f->dirs;
 		n = f->ndirs;
@@ -526,7 +518,7 @@ int
 devmount(char *args)
 {
 	Layer	*l;
-	FFid	*authfid;
+	//FFid	*authfid;
 	char	*srvname, *u, *aname, *token;
 	int	auth, i, q;
 
@@ -534,7 +526,6 @@ devmount(char *args)
 	l->aflag = NONE;
 	q = 0;
 	auth = 0;
-
 	token = strtok(args, " ");
 	while(token != NULL){
 		switch(token[0]){
@@ -601,7 +592,6 @@ devmount(char *args)
 		return -EACCES;
 	}
 	insert(l);
-
 	return strlen(args);
 }
 
@@ -615,7 +605,6 @@ devbind(char *args)
 
 	l = mallocz(sizeof(Layer), 1);
 	l->aflag = NONE;
-
 	token = strtok(args, " ");
 	while(token != NULL){
 		switch(token[0]){
@@ -642,9 +631,9 @@ devbind(char *args)
 		}
 		token = strtok(NULL, " ");
 	}
-	// So do we just stash base and overlay?
+	// TODO: srvname should be used as well in the layering
+	// as there are cases where we'll want both file trees to inspect 
 	insert(l);
-
 	return strlen(args);
 }
 
@@ -672,11 +661,10 @@ main(int argc, char *argv[])
 	/* TODO: Parse args, leave unused for fuse */
 	debug++;
 
-	init9p();
 	root = mallocz(sizeof(Layer), 1);
 	/* TODO: Base is flaggable */
 	root->base = "/";
-	/* TODO: Allow creation by default? */
+	/* TODO: Allow creation on root by default? */
 	root->cflag = 1;
 	root->aflag = NONE;
 
@@ -686,6 +674,7 @@ main(int argc, char *argv[])
 	cons->path = strdup("/dev/cons");
 	namespace->path = strdup("/dev/namespace");
 
+	init9p();
 	fuse_main(argc, argv, &fsops, NULL);
 }
 

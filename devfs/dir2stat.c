@@ -7,7 +7,7 @@
 #include <u.h>
 #include <libc.h>
 #include <fcall.h>
-#include <9p.h>
+#include "devfs.h"
 
 void
 dir2stat(struct stat *s, Dir *d, int msize)
