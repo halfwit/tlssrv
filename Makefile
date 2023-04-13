@@ -10,11 +10,11 @@ SEC=\
 
 default: all
 
-tlsclient: cpu.$O $(SEC) p9any.$O
-	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ cpu.$O $(SEC) p9any.$O
+tlsclient: tlsclient.$O $(SEC) p9any.$O
+	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ tlsclient.$O $(SEC) p9any.$O
 
-tlssrv: srv.$O $(SEC) auth_unix.$O
-	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ srv.$O $(SEC) auth_unix.$O
+tlssrv: tlssrv.$O $(SEC) auth_unix.$O
+	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ tlssrv.$O $(SEC) auth_unix.$O
 
 devfs/devfs:
 	(cd devfs; $(MAKE))
@@ -25,10 +25,10 @@ exportfs/exportfs:
 wrkey: wrkey.$O $(SEC)
 	$(CC) -o $@ wrkey.$O $(SEC)
 
-srv.$O: srv.c
+tlssrv.$O: tlssrv.c
 	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
 
-cpu.$O: cpu.c
+tlsclient.$O: tlsclient.c
 	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
 
 %.$O: %.c

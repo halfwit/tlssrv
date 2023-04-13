@@ -22,4 +22,4 @@ devfs.$O: devfs.c
 
 .PHONY: clean
 clean:
-	rm -f *.o devfs
+	rm -f *.o devfs libc.a
