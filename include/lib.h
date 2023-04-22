@@ -1,7 +1,6 @@
 /* avoid name conflicts */
 #define accept	pm_accept
 #define listen  pm_listen
-#define sleep	ksleep
 #define wakeup	kwakeup
 #ifdef strtod
 #undef strtod
