@@ -7,10 +7,7 @@ This is a set of tools that is designed for Unix/Linux systems, allowing interac
  - wrkey creates a pseudo-nvram keystore that tlssrv, devshim, procshim, and exportfs use to authenticate against a remote authserver using dp9ik or p9sk1.
  - tlsclient was written by someone else, as well of much of the supporting framework for these utilities
    - see https://git.sr.ht/~moody/tlsclient for much more detail on usage
- - devshim supports plan9-style bind and mount operations using FUSE via a special handle called /dev/namespace 
-   Reads and writes to this file create and manage mounts/binds, from remote systems or locally 
-   Additionally, devshim provides a wrapper for /dev/cons to interact with the host stdio
- - procshim introduces some of the expected /proc system semantics expected on plan9, using FUSE 
+ - srv dials the remote resource and posts the fd to /srv. Requires srvfs
 
 ## Caveats 
 This is a work in progress, but is intended to be used to create a cpu listener with access to a Unix/Linux userland for further work on https://github.com/halfwit/x9dev and eventually the ability to rcpu into a Unix/Linux system where X11 programs can be forwarded to a plan9/9front machine while utilizing more powerful graphics cards but still maintaining a native feel
