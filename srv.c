@@ -248,3 +248,22 @@ Mount:
 }
 
 
+/*
+	if(uflag){
+		uaddr.sun_family = AF_UNIX;
+		n = sizeof(uaddr.sun_path);
+		strecpy(uaddr.sun_path, uaddr.sun_path+n, argv[0]);
+		addr = (struct sockaddr*)&uaddr;
+		alen = sizeof(uaddr);
+	}else{
+		if((e = getaddrinfo(argv[0], port, NULL, &ainfo)) != 0)
+			errx(1, "%s", gai_strerror(e));
+		addr = ainfo->ai_addr;
+		alen = ainfo->ai_addrlen;
+	}
+	srvfd = socket(addr->sa_family, SOCK_STREAM, 0);
+	if(connect(srvfd, addr, alen) == -1)
+		err(1, "Could not connect to 9p server");
+	if(uflag == 0)
+		freeaddrinfo(ainfo);
+*/
