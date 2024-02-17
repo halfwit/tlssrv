@@ -16,17 +16,14 @@ tlsclient: tlsclient.$O $(SEC) p9any.$O
 tlssrv: tlssrv.$O $(SEC) auth_unix.$O
 	$(CC) `pkg-config $(OPENSSL) --libs` $(LDFLAGS) -o $@ tlssrv.$O $(SEC) auth_unix.$O
 
-srv:	srv.$O $(SEC)
-	$(CC) $(LDFLAGS) -o $@ srv.$O $(SEC)
-
 wrkey: wrkey.$O $(SEC)
 	$(CC) -o $@ wrkey.$O $(SEC)
 
 tlssrv.$O: tlssrv.c
-	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
+	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(TLS) --cflags` $(CFLAGS) $< -o $@
 
 tlsclient.$O: tlsclient.c
-	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(gnutls) --cflags` $(CFLAGS) $< -o $@
+	$(CC) `pkg-config $(OPENSSL) --cflags` `pkg-config $(TLS) --cflags` $(CFLAGS) $< -o $@
 
 %.$O: %.c
 	$(CC) $(CFLAGS) $< -o $@
@@ -46,7 +43,7 @@ libc/libc.a:
 libsec/libsec.a:
 	(cd libsec; $(MAKE))
 
-all: tlsclient tlssrv wrkey 
+all: tlsclient tlssrv wrkey
 
 .PHONY: clean
 clean:
@@ -55,6 +52,6 @@ clean:
 .PHONY: install
 install: tlsclient tlsclient.1 tlssrv wrkey
 	cp tlsclient $(PREFIX)/bin
-	cp tlsclient.1 $(PREFIX)/man/man1/
+	# cp tlsclient.1 $(PREFIX)/man/man1/
 	cp tlssrv $(PREFIX)/bin
 	cp wrkey $(PREFIX)/bin

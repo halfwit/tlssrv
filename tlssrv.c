@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -50,6 +51,7 @@ xfer(int from, int to, iofunc recvf, iofunc sendf)
 		;
 }
 
+/* TODO: Add ways to get a password */
 int
 nvram2key(Authkey *key)
 {
@@ -87,7 +89,6 @@ srv9pauth(Authkey key)
 	ai = auth_unix(user, authdom, key);
 	if(ai == nil)
 		sysfatal("auth_unix: unable to authenticate");
-		//return ENOAUTH;
 
 	client = strdup(ai->cuid);
 	
@@ -199,12 +200,14 @@ main(int argc, char **argv)
 		dup2(pout[1], 1);
 
 		/* Exec child as uid */
+#ifdef __APPLE__
+		if((uid = getuid()) < 0)
+#else
 		if(uid_from_user(client, &uid) < 0)
+#endif
 			sysfatal("unable to switch to authenticated user");
-
 		if(setuid(uid) != 0)
 			sysfatal("setuid failed");
-
 		execvp(argv[0], argv);
 		sysfatal("exec failed");
 	}
@@ -214,7 +217,6 @@ main(int argc, char **argv)
 	close(pout[1]);
 	infd = pin[1];
 	outfd = pout[0];
-
 
 	signal(SIGUSR1, suicide);
 	switch((xferc = fork())){
