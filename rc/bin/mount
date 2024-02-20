@@ -1,4 +1,0 @@
-#!/bin/rc
-
-echo $* >> /proc/ctl/mount 
-

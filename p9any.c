@@ -281,8 +281,6 @@ again:
 		return nil;
 	}
 	memmove(crand+NONCELEN, auth.rand, NONCELEN);
-
-	// print("i am %s there.\n", t.suid);
 	ai = establish(&t, crand, dp9ik);
 
 	memset(&authkey, 0, sizeof(authkey));
